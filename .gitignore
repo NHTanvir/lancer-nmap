@@ -6,7 +6,7 @@ target/
 build/
 dist/
 
-# OS / editor
+# Editor / OS
 .DS_Store
 Thumbs.db
 *.swp
@@ -14,3 +14,7 @@ Thumbs.db
 *.log
 .idea/
 .vscode/
+
+# Lancer runtime
+*.port
+*.checkpoint

@@ -1,0 +1,22 @@
+[package]
+name = "ncat"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "Netcat replacement with DTLS, SOCKS, Unix-domain-socket support"
+
+[[bin]]
+name = "lancer-ncat"
+path = "src/main.rs"
+
+[dependencies]
+clap.workspace = true
+tokio.workspace = true
+anyhow.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+rustls.workspace = true
+hex.workspace = true
+bytes.workspace = true
+socket2.workspace = true

@@ -1,0 +1,29 @@
+[package]
+name = "nmap-probes"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "nmap-service-probes parser + matcher for lancer-nmap"
+
+[dependencies]
+nmap-core = { path = "../nmap-core" }
+nmap-data = { path = "../nmap-data" }
+
+tokio.workspace = true
+tracing.workspace = true
+anyhow.workspace = true
+thiserror.workspace = true
+regex.workspace = true
+fancy-regex.workspace = true
+nom.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+once_cell.workspace = true
+bytes.workspace = true
+hex.workspace = true
+rand.workspace = true
+indexmap.workspace = true
+parking_lot.workspace = true
+
+rustls.workspace = true

@@ -1,0 +1,47 @@
+[package]
+name = "nmap-core"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "Core scanner engine for lancer-nmap"
+
+[features]
+default = ["raw"]
+raw = ["dep:pnet", "dep:pnet_datalink", "dep:pnet_packet", "dep:pnet_transport"]
+
+[dependencies]
+nmap-data = { path = "../nmap-data" }
+
+tokio.workspace = true
+tokio-util.workspace = true
+futures.workspace = true
+async-trait.workspace = true
+tracing.workspace = true
+anyhow.workspace = true
+thiserror.workspace = true
+ipnet.workspace = true
+hickory-resolver.workspace = true
+governor.workspace = true
+nonzero_ext.workspace = true
+etherparse.workspace = true
+regex.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+crossbeam-channel.workspace = true
+parking_lot.workspace = true
+once_cell.workspace = true
+chrono.workspace = true
+rand.workspace = true
+bytes.workspace = true
+byteorder.workspace = true
+hex.workspace = true
+socket2.workspace = true
+rangemap.workspace = true
+indexmap.workspace = true
+url.workspace = true
+
+pnet = { workspace = true, optional = true }
+pnet_datalink = { workspace = true, optional = true }
+pnet_packet = { workspace = true, optional = true }
+pnet_transport = { workspace = true, optional = true }

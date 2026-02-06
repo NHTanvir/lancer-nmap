@@ -1,0 +1,46 @@
+[package]
+name = "lancer-nmap"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Rust clone of nmap — part of the Lancer bug bounty toolkit"
+
+[[bin]]
+name = "lancer-nmap"
+path = "src/main.rs"
+
+[[bin]]
+name = "lancer-nmap-cli"
+path = "src/bin/cli.rs"
+
+[dependencies]
+nmap-core = { path = "../crates/nmap-core" }
+nmap-probes = { path = "../crates/nmap-probes" }
+nmap-osdb = { path = "../crates/nmap-osdb" }
+nmap-nse = { path = "../crates/nmap-nse" }
+nmap-data = { path = "../crates/nmap-data" }
+nmap-output = { path = "../crates/nmap-output" }
+nmap-gui = { path = "../crates/nmap-gui" }
+
+clap.workspace = true
+tokio.workspace = true
+anyhow.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+futures.workspace = true
+directories.workspace = true
+tempfile.workspace = true
+chrono.workspace = true
+axum.workspace = true
+tower.workspace = true
+hyper.workspace = true
+crossbeam-channel.workspace = true
+parking_lot.workspace = true
+url.workspace = true
+indexmap.workspace = true
+hex.workspace = true

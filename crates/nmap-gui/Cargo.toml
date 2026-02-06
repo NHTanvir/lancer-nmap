@@ -1,0 +1,34 @@
+[package]
+name = "nmap-gui"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "eframe / egui GUI front-end for lancer-nmap"
+
+[dependencies]
+nmap-core = { path = "../nmap-core" }
+nmap-probes = { path = "../nmap-probes" }
+nmap-osdb = { path = "../nmap-osdb" }
+nmap-output = { path = "../nmap-output" }
+nmap-data = { path = "../nmap-data" }
+
+eframe.workspace = true
+egui.workspace = true
+egui_extras.workspace = true
+egui_plot.workspace = true
+rfd.workspace = true
+arboard.workspace = true
+egui-notify.workspace = true
+image.workspace = true
+directories.workspace = true
+
+tokio.workspace = true
+crossbeam-channel.workspace = true
+parking_lot.workspace = true
+tracing.workspace = true
+anyhow.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+chrono.workspace = true
+indexmap.workspace = true

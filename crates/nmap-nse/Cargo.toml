@@ -1,0 +1,36 @@
+[package]
+name = "nmap-nse"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "NSE (Nmap Scripting Engine) host for lancer-nmap"
+
+[dependencies]
+nmap-core = { path = "../nmap-core" }
+nmap-data = { path = "../nmap-data" }
+
+mlua.workspace = true
+tokio.workspace = true
+tokio-util.workspace = true
+futures.workspace = true
+async-trait.workspace = true
+tracing.workspace = true
+anyhow.workspace = true
+thiserror.workspace = true
+regex.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+once_cell.workspace = true
+parking_lot.workspace = true
+hickory-resolver.workspace = true
+reqwest.workspace = true
+rustls.workspace = true
+indexmap.workspace = true
+hex.workspace = true
+base64.workspace = true
+url.workspace = true
+chrono.workspace = true
+rand.workspace = true
+walkdir.workspace = true
+glob.workspace = true

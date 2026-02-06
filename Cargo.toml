@@ -1,21 +1,132 @@
-[package]
-name = "lancer-nmap"
+[workspace]
+resolver = "2"
+members = [
+    "lancer-nmap",
+    "crates/nmap-core",
+    "crates/nmap-probes",
+    "crates/nmap-osdb",
+    "crates/nmap-nse",
+    "crates/nmap-data",
+    "crates/nmap-output",
+    "crates/nmap-gui",
+    "tools/ndiff",
+    "tools/ncat",
+    "tools/nping",
+]
+
+[workspace.package]
 version = "0.1.0"
 edition = "2021"
-description = "Rust clone of nmap — part of the Lancer bug bounty toolkit"
 authors = ["NHTanvir <naymulhasantanvir10@gmail.com>"]
 license = "MIT"
 repository = "https://github.com/NHTanvir/lancer-nmap"
+rust-version = "1.75"
 
-[dependencies]
-clap = { version = "4", features = ["derive"] }
-tokio = { version = "1", features = ["full"] }
-anyhow = "1"
+[workspace.dependencies]
+# CLI
+clap = { version = "4.5", features = ["derive", "wrap_help", "env"] }
+
+# Async
+tokio = { version = "1.40", features = ["full"] }
+tokio-util = { version = "0.7", features = ["full"] }
+futures = "0.3"
+async-trait = "0.1"
+
+# Logging
 tracing = "0.1"
-tracing-subscriber = "0.3"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
+
+# Errors
+anyhow = "1"
+thiserror = "1"
+
+# Networking
+ipnet = { version = "2.10", features = ["serde"] }
+hickory-resolver = "0.24"
+governor = "0.7"
+nonzero_ext = "0.3"
+
+# Raw sockets / pcap (optional features in crates)
+pnet = { version = "0.35", default-features = false, features = ["std"] }
+pnet_datalink = "0.35"
+pnet_packet = "0.35"
+pnet_transport = "0.35"
+etherparse = "0.15"
+
+# Regex / parsing
+regex = "1.10"
+fancy-regex = "0.13"
+nom = "7"
+winnow = "0.6"
+
+# Output
+quick-xml = { version = "0.36", features = ["serialize"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+csv = "1"
+
+# HTTP (control plane + NSE)
+axum = "0.7"
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json", "stream", "gzip", "brotli"] }
+tower = "0.5"
+tower-http = { version = "0.6", features = ["cors", "trace"] }
+hyper = "1"
+hyper-util = "0.1"
+
+# TLS
+rustls = "0.23"
+rustls-pemfile = "2"
+
+# NSE
+mlua = { version = "0.10", features = ["lua54", "vendored", "async", "send", "serialize"] }
+
+# GUI
+eframe = { version = "0.29", default-features = false, features = ["default_fonts", "glow", "persistence"] }
+egui = "0.29"
+egui_extras = { version = "0.29", features = ["all_loaders", "image", "syntect", "datepicker"] }
+egui_plot = "0.29"
+rfd = "0.15"
+arboard = "3"
+muda = "0.15"
+egui-notify = "0.17"
+image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
+directories = "5"
+
+# Misc
+crossbeam-channel = "0.5"
+parking_lot = "0.12"
+once_cell = "1"
+chrono = { version = "0.4", features = ["serde"] }
+uuid = { version = "1", features = ["v4", "serde"] }
+rand = "0.8"
+bytes = "1"
+byteorder = "1"
+hex = "0.4"
+base64 = "0.22"
+url = "2"
+percent-encoding = "2"
+socket2 = { version = "0.5", features = ["all"] }
+rangemap = "1"
+indexmap = { version = "2", features = ["serde"] }
+toml = "0.8"
+walkdir = "2"
+glob = "0.3"
+tempfile = "3"
+
+[workspace.lints.rust]
+unsafe_code = "warn"
+unreachable_pub = "warn"
 
 [profile.release]
 opt-level = 3
-lto = true
+lto = "fat"
 codegen-units = 1
 strip = true
+panic = "abort"
+
+[profile.dev]
+opt-level = 0
+debug = true
+
+[profile.test]
+opt-level = 1

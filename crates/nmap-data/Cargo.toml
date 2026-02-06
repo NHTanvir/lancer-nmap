@@ -1,0 +1,14 @@
+[package]
+name = "nmap-data"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "Embedded data files (nmap-services, nmap-payloads, nmap-mac-prefixes, nmap-rpc, nmap-protocols)"
+
+[dependencies]
+once_cell.workspace = true
+parking_lot.workspace = true
+hex.workspace = true
+indexmap.workspace = true
+serde.workspace = true

@@ -1,0 +1,22 @@
+[package]
+name = "nmap-osdb"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "nmap-os-db parser + scorer for lancer-nmap"
+
+[dependencies]
+nmap-core = { path = "../nmap-core" }
+nmap-data = { path = "../nmap-data" }
+
+tokio.workspace = true
+tracing.workspace = true
+anyhow.workspace = true
+thiserror.workspace = true
+nom.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+once_cell.workspace = true
+indexmap.workspace = true
+parking_lot.workspace = true

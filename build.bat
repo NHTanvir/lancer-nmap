@@ -3,30 +3,35 @@ setlocal enabledelayedexpansion
 title lancer-nmap Build
 
 REM ============================================================
-REM  build.bat -- Build lancer-nmap.exe for Windows
-REM  Output: build$PKG.exe
+REM  build.bat -- Build the entire lancer-nmap workspace for Windows
+REM  Output:
+REM    build\lancer-nmap.exe       (GUI + CLI entrypoint)
+REM    build\lancer-nmap-cli.exe   (pure CLI binary)
+REM    build\lancer-ndiff.exe      (scan diff)
+REM    build\lancer-ncat.exe       (netcat replacement)
+REM    build\lancer-nping.exe      (packet crafter)
 REM
 REM  Requirements:
-REM    - Rust / Cargo   https://rustup.rs
-REM    - Visual C++ Build Tools (2019/2022)
+REM    - Rust toolchain   https://rustup.rs
+REM    - Visual C++ Build Tools (2019 / 2022)
+REM    - (optional) Npcap SDK    https://npcap.com   for raw send support
 REM ============================================================
 
 set "REPO=%~dp0"
 set "REPO=%REPO:~0,-1%"
 set "BUILD=%REPO%\build"
-set "BIN=lancer-nmap.exe"
 
 echo.
 echo  ================================================
-echo    lancer-nmap  Build
+echo    lancer-nmap workspace build
 echo  ================================================
 echo.
 echo  Repo   : %REPO%
-echo  Output : %BUILD%\%BIN%
+echo  Output : %BUILD%
 echo.
 
 REM Locate cargo
-where cargo >/dev/null 2>&1
+where cargo >NUL 2>&1
 if errorlevel 1 (
     set "CARGO=%USERPROFILE%\.cargo\bin\cargo.exe"
     if not exist "!CARGO!" (
@@ -39,28 +44,25 @@ if errorlevel 1 (
     set "CARGO=cargo"
 )
 
-echo  [1/2]  Building release binary...
-"!CARGO!" build --release
+echo  [1/2] Building release workspace...
+"!CARGO!" build --release --workspace
 if errorlevel 1 (
     echo  ERROR: cargo build failed
     pause
     exit /b 1
 )
 
-echo  [2/2]  Copying to build\...
+echo  [2/2] Collecting binaries...
 if not exist "%BUILD%" mkdir "%BUILD%"
-copy /Y "%REPO%\target\release\%BIN%" "%BUILD%\" >/dev/null
-if errorlevel 1 (
-    echo  ERROR: %BIN% not found in target\release
-    pause
-    exit /b 1
+for %%B in (lancer-nmap.exe lancer-nmap-cli.exe lancer-ndiff.exe lancer-ncat.exe lancer-nping.exe) do (
+    if exist "%REPO%\target\release\%%B" copy /Y "%REPO%\target\release\%%B" "%BUILD%\" >NUL
 )
 
 echo.
 echo  ================================================
-echo    Done!  Binary ready:
+echo    Done!  Binaries copied to:
 echo.
-echo    %BUILD%\%BIN%
+echo    %BUILD%\
 echo  ================================================
 echo.
 pause

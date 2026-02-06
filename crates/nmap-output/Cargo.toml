@@ -1,0 +1,20 @@
+[package]
+name = "nmap-output"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "Output emitters (XML, normal, grepable, script-kiddie, JSON, SARIF)"
+
+[dependencies]
+nmap-core = { path = "../nmap-core" }
+
+quick-xml.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+csv.workspace = true
+anyhow.workspace = true
+thiserror.workspace = true
+chrono.workspace = true
+tracing.workspace = true
+indexmap.workspace = true
