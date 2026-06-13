@@ -3,9 +3,15 @@
 //! built-in set so the engine boots without an external file. The
 //! `--datadir <dir>` flag points to the full file when the operator wants it.
 
+/// The complete upstream `nmap-service-probes` database (v7.99), embedded
+/// verbatim. This is the 1,246-protocol, ~8,000-match-line file that powers
+/// `-sV` service/version detection at full fidelity. Freely redistributable
+/// per the upstream `nmap-service-probes` header.
+pub const FULL: &str = include_str!("../data/nmap-service-probes");
+
 /// Minimal built-in `nmap-service-probes` content covering the common probes
 /// (TCP NULL, GenericLines, GetRequest, HTTPOptions, RPCCheck, SSLSessionReq,
-/// TerminalServerCookie, TLSSessionReq).
+/// TerminalServerCookie, TLSSessionReq). Used as a fallback / in unit tests.
 pub const BUILTIN: &str = r#"# Lancer-nmap built-in service probes (compact subset)
 # Upstream parity tests expect the full nmap-service-probes file via --datadir.
 Exclude T:9100-9107

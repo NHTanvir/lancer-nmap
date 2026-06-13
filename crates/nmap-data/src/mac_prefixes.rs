@@ -3,10 +3,28 @@
 use once_cell::sync::Lazy;
 use std::collections::HashMap;
 
+/// The complete upstream `nmap-mac-prefixes` OUI database, embedded verbatim
+/// (~38,000 vendor prefixes).
+pub const FULL: &str = include_str!("../data/nmap-mac-prefixes");
+
 static OUI_MAP: Lazy<HashMap<u32, &'static str>> = Lazy::new(|| {
     let mut m = HashMap::new();
     for &(k, v) in OUI_TABLE {
         m.insert(k, v);
+    }
+    // Overlay the full embedded file: `XXXXXX Vendor Name`.
+    for line in FULL.lines() {
+        let line = line.trim();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        if let Some((hexpart, vendor)) = line.split_once(char::is_whitespace) {
+            if hexpart.len() == 6 {
+                if let Ok(key) = u32::from_str_radix(hexpart, 16) {
+                    m.insert(key, vendor.trim());
+                }
+            }
+        }
     }
     m
 });

@@ -22,7 +22,8 @@ use std::time::Duration;
     version,
     about = "Rust clone of nmap — part of the Lancer bug bounty toolkit",
     next_line_help = true,
-    arg_required_else_help = true
+    arg_required_else_help = true,
+    disable_help_flag = true
 )]
 pub struct CliArgs {
     // ============================================================
@@ -169,7 +170,7 @@ pub struct CliArgs {
     // Service / version detection
     // ============================================================
     /// `-sV` — service/version detection.
-    #[arg(long = "sV", short = 'V', action = ArgAction::SetTrue, help_heading = "Service detection")]
+    #[arg(long = "sV", action = ArgAction::SetTrue, help_heading = "Service detection")]
     pub s_version: bool,
     /// `--version-intensity 0-9`
     #[arg(long = "version-intensity", value_name = "0-9", help_heading = "Service detection")]
@@ -207,7 +208,7 @@ pub struct CliArgs {
     // NSE
     // ============================================================
     /// `-sC` default scripts.
-    #[arg(short = 'C', long = "default-script", action = ArgAction::SetTrue, help_heading = "NSE")]
+    #[arg(short = 'C', long = "default-script", alias = "sC", action = ArgAction::SetTrue, help_heading = "NSE")]
     pub default_script: bool,
     /// `--script <spec>` (repeatable, comma-separated)
     #[arg(long = "script", value_name = "SPEC", help_heading = "NSE")]
@@ -432,7 +433,70 @@ pub struct CliArgs {
     pub help: Option<bool>,
 }
 
+/// Rewrite nmap-style single-dash multi-character flags into the `--long`
+/// form that clap understands, so real nmap invocations work verbatim:
+/// `-sV`, `-sS`, `-Pn`, `-PS22,80`, `-oA base`, `-sC`, `-sn`, … The `-s`,
+/// `-P`, and `-o` prefixes are not standalone single-char shorts here, so this
+/// rewrite is unambiguous. Genuine shorts (`-p80`, `-T4`, `-A`, `-D`, `-v`)
+/// pass through untouched.
+pub fn normalize_nmap_argv(argv: Vec<String>) -> Vec<String> {
+    // Multi-char flags that take a value (attached as `-PS22` or following as
+    // `-PS 22`).
+    const VALUE_LONG: &[&str] = &[
+        "PS", "PA", "PU", "PY", "PO", "sI", "oN", "oX", "oG", "oS", "oA", "oJ",
+    ];
+    // Multi-char boolean flags (no value).
+    const BOOL_LONG: &[&str] = &[
+        "Pn", "PE", "PP", "PM", "PR", "sS", "sT", "sU", "sN", "sF", "sX", "sA",
+        "sW", "sM", "sY", "sZ", "sO", "sn", "sV", "sC", "sL", "sR",
+    ];
+    let mut out = Vec::with_capacity(argv.len());
+    let mut iter = argv.into_iter();
+    if let Some(prog) = iter.next() {
+        out.push(prog);
+    }
+    for tok in iter {
+        // Only touch single-dash tokens of length >= 3 (e.g. `-sV`); leave
+        // `--long`, lone `-`, and short flags (`-p`, `-A`, `-T4`) alone.
+        if tok.starts_with("--") || !tok.starts_with('-') || tok.len() < 3 {
+            out.push(tok);
+            continue;
+        }
+        let body = &tok[1..];
+        // nmap input-file / random-target spellings.
+        if body == "iL" {
+            out.push("--input-list".to_string());
+            continue;
+        }
+        if let Some(rest) = body.strip_prefix("iR") {
+            out.push("--iR".to_string());
+            if !rest.is_empty() {
+                out.push(rest.to_string());
+            }
+            continue;
+        }
+        // Value-taking multi-char flag, possibly with an attached value.
+        if let Some(name) = VALUE_LONG.iter().find(|n| body.starts_with(**n)) {
+            let rest = &body[name.len()..];
+            if rest.is_empty() {
+                out.push(format!("--{name}"));
+            } else {
+                out.push(format!("--{name}={rest}"));
+            }
+            continue;
+        }
+        // Boolean multi-char flag (exact match).
+        if BOOL_LONG.contains(&body) {
+            out.push(format!("--{body}"));
+            continue;
+        }
+        out.push(tok);
+    }
+    out
+}
+
 pub fn run(argv: Vec<String>) -> Result<()> {
+    let argv = normalize_nmap_argv(argv);
     let args = CliArgs::parse_from(argv);
     if args.healthcheck {
         run_healthcheck();
@@ -462,6 +526,7 @@ pub fn run(argv: Vec<String>) -> Result<()> {
     let scanner = Scanner::new(opts.clone());
     let rt = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
+        .thread_stack_size(64 * 1024 * 1024)
         .build()?;
     let mut result = rt.block_on(scanner.run())?;
     rt.block_on(crate::runner::enrich(&mut result, &opts));
@@ -797,15 +862,15 @@ fn parse_duration(s: Option<&str>) -> Result<Option<Duration>> {
 fn run_healthcheck() {
     println!("lancer-nmap healthcheck:");
     println!("  raw socket capability: {}", nmap_core::capability::cached_message());
-    let probes = nmap_probes::parse_probes(nmap_data::service_probes_db::BUILTIN);
-    println!("  built-in service probes: {}", probes.len());
-    let osdb = nmap_osdb::parse_db(nmap_data::os_db::BUILTIN);
-    println!("  built-in OS fingerprints: {}", osdb.fingerprints.len());
-    println!("  top-1000 TCP ports loaded: {}", nmap_data::services::TOP_TCP.len());
-    println!("  top-1000 UDP ports loaded: {}", nmap_data::services::TOP_UDP.len());
+    let probes = nmap_probes::parse_probes(nmap_data::service_probes_db::FULL);
+    println!("  embedded service probes (nmap-service-probes): {}", probes.len());
+    let osdb = nmap_osdb::parse_db(nmap_data::os_db::FULL);
+    println!("  embedded OS fingerprints (nmap-os-db): {}", osdb.fingerprints.len());
+    println!("  nmap-services TCP ports ranked: {}", nmap_data::services::top_n_tcp(usize::MAX).len());
+    println!("  nmap-services UDP ports ranked: {}", nmap_data::services::top_n_udp(usize::MAX).len());
     let mut nse = nmap_nse::ScriptRegistry::new();
     nse.load_builtin();
-    println!("  NSE starter scripts: {}", nse.scripts.len());
+    println!("  NSE scripts registered: {}", nse.scripts.len());
 }
 
 fn run_iflist() {

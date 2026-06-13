@@ -59,7 +59,7 @@ pub fn local_source_ip(_dst: IpAddr) -> IpAddr {
     // A real impl would call `getsockname` on a UDP-connect-to-dst socket.
     // For unprivileged + GUI use this is plenty.
     use socket2::{Domain, Socket, Type};
-    let dst = match _dst {
+    let dst: std::net::SocketAddr = match _dst {
         IpAddr::V4(_) => "8.8.8.8:80".parse().unwrap(),
         IpAddr::V6(_) => "[2001:4860:4860::8888]:80".parse().unwrap(),
     };

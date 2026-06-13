@@ -7,6 +7,81 @@
 use once_cell::sync::Lazy;
 use std::collections::HashMap;
 
+/// The complete upstream `nmap-services` file (port→name→frequency), embedded
+/// verbatim. Powers `--top-ports`/`-F`/`--port-ratio` frequency ranking and
+/// full port→service-name resolution.
+pub const FULL: &str = include_str!("../data/nmap-services");
+
+struct SvcRow {
+    name: &'static str,
+    port: u16,
+    proto: &'static str,
+    freq: f32,
+}
+
+/// Parsed rows of the full `nmap-services` file.
+/// Format (tab/space separated): `name  port/proto  frequency  # comment`.
+static FULL_ROWS: Lazy<Vec<SvcRow>> = Lazy::new(|| {
+    let mut v = Vec::new();
+    for line in FULL.lines() {
+        let line = line.trim();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        let mut it = line.split_whitespace();
+        let name = match it.next() {
+            Some(x) => x,
+            None => continue,
+        };
+        let port_proto = match it.next() {
+            Some(x) => x,
+            None => continue,
+        };
+        let (port_s, proto) = match port_proto.split_once('/') {
+            Some(x) => x,
+            None => continue,
+        };
+        let proto = match proto {
+            "tcp" => "tcp",
+            "udp" => "udp",
+            "sctp" => "sctp",
+            _ => continue,
+        };
+        let port: u16 = match port_s.parse() {
+            Ok(p) => p,
+            Err(_) => continue,
+        };
+        let freq: f32 = it.next().and_then(|f| f.parse().ok()).unwrap_or(0.0);
+        v.push(SvcRow { name, port, proto, freq });
+    }
+    v
+});
+
+fn top_sorted(proto: &str) -> Vec<u16> {
+    let mut rows: Vec<&SvcRow> = FULL_ROWS.iter().filter(|r| r.proto == proto).collect();
+    rows.sort_by(|a, b| {
+        b.freq
+            .partial_cmp(&a.freq)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+    rows.into_iter().map(|r| r.port).collect()
+}
+
+/// All TCP ports ranked by upstream open-frequency (descending) — the real
+/// `--top-ports` ordering.
+static FULL_TOP_TCP: Lazy<Vec<u16>> = Lazy::new(|| top_sorted("tcp"));
+/// All UDP ports ranked by upstream open-frequency (descending).
+static FULL_TOP_UDP: Lazy<Vec<u16>> = Lazy::new(|| top_sorted("udp"));
+
+/// Complete port+proto → service-name map from the full file.
+static FULL_NAMES: Lazy<HashMap<(u16, &'static str), &'static str>> = Lazy::new(|| {
+    let mut m = HashMap::new();
+    for r in FULL_ROWS.iter() {
+        m.entry((r.port, r.proto)).or_insert(r.name);
+    }
+    m
+});
+
 #[derive(Clone, Debug)]
 pub struct ServiceEntry {
     pub name: &'static str,
@@ -95,13 +170,21 @@ pub static TOP_UDP: &[u16] = &[
 /// Frequency-ranked list (compact): the first `n` entries are the
 /// upstream "top n" recommendation.
 pub fn top_n_tcp(n: usize) -> &'static [u16] {
-    let len = TOP_TCP.len().min(n);
-    &TOP_TCP[..len]
+    let v: &Vec<u16> = &FULL_TOP_TCP;
+    if !v.is_empty() {
+        &v[..v.len().min(n)]
+    } else {
+        &TOP_TCP[..TOP_TCP.len().min(n)]
+    }
 }
 
 pub fn top_n_udp(n: usize) -> &'static [u16] {
-    let len = TOP_UDP.len().min(n);
-    &TOP_UDP[..len]
+    let v: &Vec<u16> = &FULL_TOP_UDP;
+    if !v.is_empty() {
+        &v[..v.len().min(n)]
+    } else {
+        &TOP_UDP[..TOP_UDP.len().min(n)]
+    }
 }
 
 static SERVICE_NAMES: Lazy<HashMap<(u16, &'static str), &'static str>> = Lazy::new(|| {
@@ -116,7 +199,10 @@ static SERVICE_NAMES: Lazy<HashMap<(u16, &'static str), &'static str>> = Lazy::n
 });
 
 pub fn service_name(port: u16, protocol: &str) -> Option<&'static str> {
-    SERVICE_NAMES.get(&(port, protocol)).copied()
+    FULL_NAMES
+        .get(&(port, protocol))
+        .copied()
+        .or_else(|| SERVICE_NAMES.get(&(port, protocol)).copied())
 }
 
 const TCP_PORT_NAMES: &[(u16, &str)] = &[

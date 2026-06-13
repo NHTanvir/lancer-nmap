@@ -58,18 +58,19 @@ async fn connect_tcp(host: &str, port: u16) -> Result<()> {
     let mut s = TcpStream::connect((host, port)).await?;
     let mut stdin = tokio::io::stdin();
     let mut stdout = tokio::io::stdout();
-    let mut buf = vec![0u8; 4096];
+    let mut buf_in = vec![0u8; 4096];
+    let mut buf_out = vec![0u8; 4096];
     loop {
         tokio::select! {
-            n = stdin.read(&mut buf) => {
+            n = stdin.read(&mut buf_in) => {
                 let n = n?;
                 if n == 0 { break; }
-                s.write_all(&buf[..n]).await?;
+                s.write_all(&buf_in[..n]).await?;
             }
-            n = s.read(&mut buf) => {
+            n = s.read(&mut buf_out) => {
                 let n = n?;
                 if n == 0 { break; }
-                stdout.write_all(&buf[..n]).await?;
+                stdout.write_all(&buf_out[..n]).await?;
                 stdout.flush().await?;
             }
         }
@@ -85,18 +86,19 @@ async fn listen_tcp(args: Args) -> Result<()> {
     eprintln!("accepted {peer}");
     let mut stdin = tokio::io::stdin();
     let mut stdout = tokio::io::stdout();
-    let mut buf = vec![0u8; 4096];
+    let mut buf_in = vec![0u8; 4096];
+    let mut buf_out = vec![0u8; 4096];
     loop {
         tokio::select! {
-            n = stdin.read(&mut buf) => {
+            n = stdin.read(&mut buf_in) => {
                 let n = n?;
                 if n == 0 { break; }
-                s.write_all(&buf[..n]).await?;
+                s.write_all(&buf_in[..n]).await?;
             }
-            n = s.read(&mut buf) => {
+            n = s.read(&mut buf_out) => {
                 let n = n?;
                 if n == 0 { break; }
-                stdout.write_all(&buf[..n]).await?;
+                stdout.write_all(&buf_out[..n]).await?;
                 stdout.flush().await?;
             }
         }
@@ -109,18 +111,19 @@ async fn connect_udp(host: &str, port: u16) -> Result<()> {
     s.connect((host, port)).await?;
     let mut stdin = tokio::io::stdin();
     let mut stdout = tokio::io::stdout();
-    let mut buf = vec![0u8; 65535];
+    let mut buf_in = vec![0u8; 65535];
+    let mut buf_out = vec![0u8; 65535];
     loop {
         tokio::select! {
-            n = stdin.read(&mut buf) => {
+            n = stdin.read(&mut buf_in) => {
                 let n = n?;
                 if n == 0 { break; }
-                s.send(&buf[..n]).await?;
+                s.send(&buf_in[..n]).await?;
             }
-            n = s.recv(&mut buf) => {
+            n = s.recv(&mut buf_out) => {
                 let n = n?;
                 if n == 0 { break; }
-                stdout.write_all(&buf[..n]).await?;
+                stdout.write_all(&buf_out[..n]).await?;
                 stdout.flush().await?;
             }
         }

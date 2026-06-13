@@ -7,10 +7,29 @@ pub fn name(proto_no: u8) -> Option<&'static str> {
     NAME_MAP.get(&proto_no).copied()
 }
 
+/// The complete upstream `nmap-protocols` file, embedded verbatim.
+pub const FULL: &str = include_str!("../data/nmap-protocols");
+
 static NAME_MAP: Lazy<HashMap<u8, &'static str>> = Lazy::new(|| {
     let mut m = HashMap::new();
+    // Hardcoded compact table first (fallback / always-present baseline).
     for &(k, v) in PROTOCOL_TABLE {
         m.insert(k, v);
+    }
+    // Then overlay the full embedded file: `name  number  aliases  # comment`.
+    for line in FULL.lines() {
+        let line = line.trim();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        let mut it = line.split_whitespace();
+        let name = match it.next() {
+            Some(n) => n,
+            None => continue,
+        };
+        if let Some(num) = it.next().and_then(|n| n.parse::<u8>().ok()) {
+            m.insert(num, name);
+        }
     }
     m
 });

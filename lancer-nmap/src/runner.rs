@@ -13,7 +13,7 @@ use crate::cli::CliArgs;
 pub async fn enrich(result: &mut ScanResult, opts: &ScanOptions) {
     // Service detection (-sV).
     if opts.service_scan.enabled {
-        let engine = nmap_probes::ServiceEngine::load_builtin()
+        let engine = nmap_probes::ServiceEngine::from_datadir(opts.datadir.as_deref())
             .with_intensity(opts.service_scan.effective_intensity());
         for host in &mut result.hosts {
             run_service_detection(host, &engine).await;
@@ -25,7 +25,7 @@ pub async fn enrich(result: &mut ScanResult, opts: &ScanOptions) {
     // features were observable (TTL hints + open-port profile). This gives
     // operators a directional answer even on connect-only platforms.
     if opts.os_scan.enabled {
-        let db = nmap_osdb::parse_db(nmap_data::os_db::BUILTIN);
+        let db = nmap_osdb::parse_db(&nmap_data::load_os_db(opts.datadir.as_deref()));
         for host in &mut result.hosts {
             let fv = synthesize_features(host);
             let matches = nmap_osdb::score(&db, &fv, 5);

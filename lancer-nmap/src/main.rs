@@ -44,7 +44,18 @@ fn main() -> Result<()> {
     if entry.cli || !entry.rest.is_empty() {
         let mut argv = vec!["lancer-nmap".to_string()];
         argv.extend(entry.rest.iter().cloned());
-        return cli::run(argv);
+        // The embedded data files (nmap-service-probes ~2.6 MB + nmap-os-db
+        // ~5.5 MB) are parsed synchronously for `--healthcheck`/`--self-test`
+        // and other CLI paths. That can exceed the small default main-thread
+        // stack (1 MB on Windows), so run the CLI on a thread with a generous
+        // stack. The reservation is lazy — pages commit only as used.
+        let handle = std::thread::Builder::new()
+            .name("lancer-cli".into())
+            .stack_size(256 * 1024 * 1024)
+            .spawn(move || cli::run(argv))?;
+        return handle.join().unwrap_or_else(|_| {
+            std::process::exit(2);
+        });
     }
     nmap_gui::launch()
 }

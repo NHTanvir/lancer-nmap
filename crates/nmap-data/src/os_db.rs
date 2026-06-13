@@ -2,6 +2,11 @@
 //! Operators wanting full coverage point `--datadir <dir>` at the official
 //! `nmap-os-db`.
 
+/// The complete upstream `nmap-os-db` database (v7.99), embedded verbatim:
+/// 6,000+ TCP/IP-stack fingerprints with `MatchPoints` weights that power
+/// `-O` OS detection at full fidelity. Freely redistributable per upstream.
+pub const FULL: &str = include_str!("../data/nmap-os-db");
+
 /// Minimal built-in nmap-os-db content. Enough fingerprints for sanity tests.
 pub const BUILTIN: &str = r#"# Lancer-nmap built-in OS fingerprints (compact subset)
 MatchPoints

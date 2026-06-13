@@ -8,6 +8,7 @@ description = "Output emitters (XML, normal, grepable, script-kiddie, JSON, SARI
 
 [dependencies]
 nmap-core = { path = "../nmap-core" }
+nmap-data = { path = "../nmap-data" }
 
 quick-xml.workspace = true
 serde.workspace = true

@@ -21,6 +21,38 @@ pub fn install_all(lua: &Lua, ctx: &ScriptContext) -> LuaResult<()> {
     install_match(lua)?;
     install_tableaux(lua)?;
     install_string_extras(lua)?;
+    install_nselib_modules(lua)?;
+    Ok(())
+}
+
+/// Preload every embedded upstream `nselib` Lua module (133 modules) into
+/// `package.preload` so scripts can `require` them. The Rust-backed primitive
+/// stubs installed above (nmap/http/ssl/dns/stdnse/...) take precedence — we
+/// never overwrite an already-registered module.
+fn install_nselib_modules(lua: &Lua) -> LuaResult<()> {
+    let package: Table = lua.globals().get("package")?;
+    let preload: Table = package.get("preload")?;
+    for file in crate::registry::EMBEDDED_NSELIB.files() {
+        let name = match file.path().file_stem().and_then(|s| s.to_str()) {
+            Some(n) => n.to_string(),
+            None => continue,
+        };
+        let existing: mlua::Value = preload.get(name.clone())?;
+        if !existing.is_nil() {
+            continue; // keep the Rust-backed stub
+        }
+        let src = match file.contents_utf8() {
+            Some(s) => s.to_string(),
+            None => continue,
+        };
+        let modname = name.clone();
+        preload.set(
+            name,
+            lua.create_function(move |lua, ()| {
+                lua.load(&src).set_name(modname.clone()).eval::<mlua::Value>()
+            })?,
+        )?;
+    }
     Ok(())
 }
 

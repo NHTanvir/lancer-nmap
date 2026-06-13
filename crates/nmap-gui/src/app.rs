@@ -136,6 +136,7 @@ impl App {
                     }
                 }
             }
+            drop(jobs); // release the lock before &mut self calls below
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 if ui.button("Run").clicked() {
                     self.run_form(ui.ctx());

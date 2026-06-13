@@ -47,6 +47,19 @@ impl ServiceEngine {
         }
     }
 
+    /// Load the complete embedded upstream `nmap-service-probes` database
+    /// (v7.99 — 1,246 protocols, ~8,000 match lines). This is the default for
+    /// real scans; `-sV` matches at full fidelity.
+    pub fn load_full() -> Self {
+        Self::load_text(nmap_data::service_probes_db::FULL)
+    }
+
+    /// Load probes from a `--datadir` directory if it contains
+    /// `nmap-service-probes`, otherwise the full embedded database.
+    pub fn from_datadir(datadir: Option<&std::path::Path>) -> Self {
+        Self::load_text(&nmap_data::load_service_probes(datadir))
+    }
+
     pub fn with_intensity(mut self, n: u8) -> Self {
         self.intensity = n.min(9);
         self

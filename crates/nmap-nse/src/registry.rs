@@ -1,10 +1,32 @@
 //! Script registry — discovery + lookup.
+//!
+//! The complete upstream NSE corpus (612 `.nse` scripts + 133 `nselib` Lua
+//! modules, v7.99) is embedded at build time via `include_dir!`, so every
+//! script is registered, category-filterable, and available to `--script` /
+//! `--script-help` even on a fresh install with no `--datadir`.
 
 use crate::categories::{Category, CategoryFilter};
 use crate::scripts::Script;
+use include_dir::{include_dir, Dir};
 use indexmap::IndexMap;
 use std::path::Path;
 use tracing::trace;
+
+/// The complete upstream NSE script corpus (`.nse` files), embedded verbatim.
+static EMBEDDED_SCRIPTS: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/nse/scripts");
+
+/// The complete upstream `nselib` (Lua helper modules), embedded verbatim and
+/// resolved by the engine's `require` searcher.
+pub static EMBEDDED_NSELIB: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/nse/nselib");
+
+/// Look up an embedded `nselib` module source by `require` name (e.g.
+/// `"stdnse"` → `nselib/stdnse.lua`). Used by the engine's Lua searcher.
+pub fn nselib_source(module: &str) -> Option<&'static str> {
+    let path = format!("{module}.lua");
+    EMBEDDED_NSELIB
+        .get_file(&path)
+        .and_then(|f| f.contents_utf8())
+}
 
 #[derive(Default)]
 pub struct ScriptRegistry {
@@ -16,13 +38,41 @@ impl ScriptRegistry {
         Self::default()
     }
 
-    /// Populate the registry with the bundled starter scripts.
+    /// Populate the registry with the full embedded upstream NSE corpus (all
+    /// 612 scripts). Each script's categories/author/license are parsed from
+    /// its real header.
     pub fn load_builtin(&mut self) {
-        for s in starter_scripts() {
-            self.scripts.insert(s.name.clone(), s);
+        for file in EMBEDDED_SCRIPTS.files() {
+            let fname = match file.path().file_name().and_then(|n| n.to_str()) {
+                Some(n) => n,
+                None => continue,
+            };
+            if !fname.ends_with(".nse") {
+                continue;
+            }
+            let body = match file.contents_utf8() {
+                Some(b) => b,
+                None => continue,
+            };
+            let name = fname.trim_end_matches(".nse").to_string();
+            let parsed = parse_header(body);
+            let s = Script {
+                name: name.clone(),
+                path: None,
+                source: Some(body.to_string()),
+                description: parsed.description,
+                categories: parsed.categories,
+                author: parsed.author,
+                license: parsed.license,
+                dependencies: parsed.dependencies,
+            };
+            self.scripts.insert(name, s);
         }
+        trace!("NSE registry loaded {} embedded scripts", self.scripts.len());
     }
 
+    /// Discover scripts in an on-disk directory (e.g. a user `--datadir`'s
+    /// `scripts/`), overriding any embedded script of the same name.
     pub fn discover_in(&mut self, dir: &Path) {
         for entry in walkdir::WalkDir::new(dir).into_iter().flatten() {
             if entry.file_type().is_file() {
@@ -46,7 +96,7 @@ impl ScriptRegistry {
                 }
             }
         }
-        trace!("NSE registry loaded {} scripts", self.scripts.len());
+        trace!("NSE registry now holds {} scripts", self.scripts.len());
     }
 
     pub fn filter(&self, f: &CategoryFilter) -> Vec<Script> {
@@ -74,315 +124,71 @@ fn parse_header(body: &str) -> ParsedHeader {
         license: String::new(),
         dependencies: Vec::new(),
     };
-    // Crude scan for description = [[ ... ]], categories = {...}, etc.
+    // description = [[ ... ]]
     if let Some(start) = body.find("description") {
         let tail = &body[start..];
         if let Some(open) = tail.find("[[") {
-            if let Some(close) = tail[open..].find("]]") {
-                out.description = tail[open + 2..open + close].trim().to_string();
+            if let Some(close) = tail[open + 2..].find("]]") {
+                out.description = tail[open + 2..open + 2 + close].trim().to_string();
             }
         }
     }
-    if let Some(start) = body.find("categories") {
-        let tail = &body[start..];
-        if let Some(open) = tail.find('{') {
-            if let Some(close) = tail[open..].find('}') {
-                let body = &tail[open + 1..open + close];
-                for tok in body.split(',') {
-                    let tok = tok.trim().trim_matches('"').trim_matches('\'');
-                    if let Some(c) = Category::parse(tok) {
-                        out.categories.push(c);
-                    }
-                }
+    // categories = { "default", "safe", ... }
+    if let Some(block) = find_braced_assignment(body, "categories") {
+        for tok in block.split(',') {
+            let tok = tok.trim().trim_matches(|c| c == '"' || c == '\'').trim();
+            if let Some(c) = Category::parse(tok) {
+                out.categories.push(c);
             }
         }
     }
-    if let Some(start) = body.find("author") {
-        let tail = &body[start..];
-        if let Some(open) = tail.find('"') {
-            if let Some(close) = tail[open + 1..].find('"') {
-                out.author = tail[open + 1..open + 1 + close].to_string();
+    // dependencies = { "smb-brute", ... }
+    if let Some(block) = find_braced_assignment(body, "dependencies") {
+        for tok in block.split(',') {
+            let tok = tok.trim().trim_matches(|c| c == '"' || c == '\'').trim();
+            if !tok.is_empty() {
+                out.dependencies.push(tok.to_string());
             }
         }
     }
-    if let Some(start) = body.find("license") {
-        let tail = &body[start..];
-        if let Some(open) = tail.find('"') {
-            if let Some(close) = tail[open + 1..].find('"') {
-                out.license = tail[open + 1..open + 1 + close].to_string();
-            }
-        }
-    }
+    out.author = find_string_assignment(body, "author").unwrap_or_default();
+    out.license = find_string_assignment(body, "license").unwrap_or_default();
     out
 }
 
-fn starter_scripts() -> Vec<Script> {
-    use Category::*;
-    vec![
-        Script::builtin(
-            "http-title",
-            include_str!("../scripts/http-title.nse"),
-            &[Default, Discovery, Safe],
-        ),
-        Script::builtin(
-            "http-headers",
-            include_str!("../scripts/http-headers.nse"),
-            &[Discovery, Safe],
-        ),
-        Script::builtin(
-            "http-methods",
-            include_str!("../scripts/http-methods.nse"),
-            &[Default, Safe],
-        ),
-        Script::builtin(
-            "http-enum",
-            include_str!("../scripts/http-enum.nse"),
-            &[Discovery, Intrusive],
-        ),
-        Script::builtin(
-            "http-robots-txt",
-            include_str!("../scripts/http-robots-txt.nse"),
-            &[Default, Discovery, Safe],
-        ),
-        Script::builtin(
-            "ssl-cert",
-            include_str!("../scripts/ssl-cert.nse"),
-            &[Default, Safe, Discovery],
-        ),
-        Script::builtin(
-            "ssl-enum-ciphers",
-            include_str!("../scripts/ssl-enum-ciphers.nse"),
-            &[Default, Discovery, Safe],
-        ),
-        Script::builtin(
-            "ssl-heartbleed",
-            include_str!("../scripts/ssl-heartbleed.nse"),
-            &[Vuln, Safe],
-        ),
-        Script::builtin(
-            "ftp-anon",
-            include_str!("../scripts/ftp-anon.nse"),
-            &[Default, Auth, Safe],
-        ),
-        Script::builtin(
-            "ftp-syst",
-            include_str!("../scripts/ftp-syst.nse"),
-            &[Default, Discovery, Safe],
-        ),
-        Script::builtin(
-            "ssh-hostkey",
-            include_str!("../scripts/ssh-hostkey.nse"),
-            &[Default, Safe, Discovery],
-        ),
-        Script::builtin(
-            "ssh-auth-methods",
-            include_str!("../scripts/ssh-auth-methods.nse"),
-            &[Auth, Discovery],
-        ),
-        Script::builtin(
-            "ssh-brute",
-            include_str!("../scripts/ssh-brute.nse"),
-            &[Brute, Intrusive],
-        ),
-        Script::builtin(
-            "smb-os-discovery",
-            include_str!("../scripts/smb-os-discovery.nse"),
-            &[Default, Discovery, Safe],
-        ),
-        Script::builtin(
-            "smb-enum-shares",
-            include_str!("../scripts/smb-enum-shares.nse"),
-            &[Discovery, Intrusive],
-        ),
-        Script::builtin(
-            "smb-vuln-ms17-010",
-            include_str!("../scripts/smb-vuln-ms17-010.nse"),
-            &[Vuln, Safe],
-        ),
-        Script::builtin(
-            "smb-vuln-webexec",
-            include_str!("../scripts/smb-vuln-webexec.nse"),
-            &[Vuln, Safe],
-        ),
-        Script::builtin(
-            "dns-recursion",
-            include_str!("../scripts/dns-recursion.nse"),
-            &[Default, Discovery, Safe],
-        ),
-        Script::builtin(
-            "dns-zone-transfer",
-            include_str!("../scripts/dns-zone-transfer.nse"),
-            &[Discovery, Intrusive],
-        ),
-        Script::builtin(
-            "smtp-commands",
-            include_str!("../scripts/smtp-commands.nse"),
-            &[Default, Discovery, Safe],
-        ),
-        Script::builtin(
-            "smtp-enum-users",
-            include_str!("../scripts/smtp-enum-users.nse"),
-            &[Discovery, Intrusive],
-        ),
-        Script::builtin(
-            "snmp-info",
-            include_str!("../scripts/snmp-info.nse"),
-            &[Default, Discovery, Safe],
-        ),
-        Script::builtin(
-            "snmp-sysdescr",
-            include_str!("../scripts/snmp-sysdescr.nse"),
-            &[Default, Discovery, Safe],
-        ),
-        Script::builtin(
-            "mysql-info",
-            include_str!("../scripts/mysql-info.nse"),
-            &[Default, Discovery, Safe],
-        ),
-        Script::builtin(
-            "mysql-empty-password",
-            include_str!("../scripts/mysql-empty-password.nse"),
-            &[Auth, Intrusive],
-        ),
-        Script::builtin(
-            "mssql-info",
-            include_str!("../scripts/mssql-info.nse"),
-            &[Default, Discovery, Safe],
-        ),
-        Script::builtin(
-            "redis-info",
-            include_str!("../scripts/redis-info.nse"),
-            &[Default, Discovery, Safe],
-        ),
-        Script::builtin(
-            "mongodb-info",
-            include_str!("../scripts/mongodb-info.nse"),
-            &[Default, Discovery, Safe],
-        ),
-        Script::builtin(
-            "rdp-enum-encryption",
-            include_str!("../scripts/rdp-enum-encryption.nse"),
-            &[Discovery, Safe],
-        ),
-        Script::builtin(
-            "rpcinfo",
-            include_str!("../scripts/rpcinfo.nse"),
-            &[Default, Discovery, Safe],
-        ),
-        Script::builtin(
-            "telnet-encryption",
-            include_str!("../scripts/telnet-encryption.nse"),
-            &[Discovery, Safe],
-        ),
-        Script::builtin(
-            "vnc-info",
-            include_str!("../scripts/vnc-info.nse"),
-            &[Default, Discovery, Safe],
-        ),
-        Script::builtin(
-            "vnc-title",
-            include_str!("../scripts/vnc-title.nse"),
-            &[Default, Discovery, Safe],
-        ),
-        Script::builtin(
-            "ntp-info",
-            include_str!("../scripts/ntp-info.nse"),
-            &[Default, Discovery, Safe],
-        ),
-        Script::builtin(
-            "ntp-monlist",
-            include_str!("../scripts/ntp-monlist.nse"),
-            &[Discovery, Intrusive],
-        ),
-        Script::builtin(
-            "memcached-info",
-            include_str!("../scripts/memcached-info.nse"),
-            &[Default, Discovery, Safe],
-        ),
-        Script::builtin(
-            "elasticsearch-info",
-            include_str!("../scripts/elasticsearch-info.nse"),
-            &[Default, Discovery, Safe],
-        ),
-        Script::builtin(
-            "docker-version",
-            include_str!("../scripts/docker-version.nse"),
-            &[Default, Discovery, Safe],
-        ),
-        Script::builtin(
-            "http-vuln-cve2017-5638",
-            include_str!("../scripts/http-vuln-cve2017-5638.nse"),
-            &[Vuln, Safe],
-        ),
-        Script::builtin(
-            "http-vuln-cve2014-3704",
-            include_str!("../scripts/http-vuln-cve2014-3704.nse"),
-            &[Vuln, Safe],
-        ),
-        Script::builtin(
-            "http-aws-imds",
-            include_str!("../scripts/http-aws-imds.nse"),
-            &[Vuln, Discovery],
-        ),
-        Script::builtin(
-            "http-kube-anon-access",
-            include_str!("../scripts/http-kube-anon-access.nse"),
-            &[Discovery, Vuln],
-        ),
-        Script::builtin(
-            "http-internal-ip-disclosure",
-            include_str!("../scripts/http-internal-ip-disclosure.nse"),
-            &[Discovery, Vuln],
-        ),
-        Script::builtin(
-            "hostmap-crtsh",
-            include_str!("../scripts/hostmap-crtsh.nse"),
-            &[Discovery, External, Safe],
-        ),
-        Script::builtin(
-            "mikrotik-routeros-version",
-            include_str!("../scripts/mikrotik-routeros-version.nse"),
-            &[Discovery, Iot, Safe],
-        ),
-        Script::builtin(
-            "mikrotik-routeros-username-brute",
-            include_str!("../scripts/mikrotik-routeros-username-brute.nse"),
-            &[Brute, Intrusive, Iot],
-        ),
-        Script::builtin(
-            "modbus-discover",
-            include_str!("../scripts/modbus-discover.nse"),
-            &[Discovery, Ics, Safe],
-        ),
-        Script::builtin(
-            "s7-info",
-            include_str!("../scripts/s7-info.nse"),
-            &[Discovery, Ics, Safe],
-        ),
-        Script::builtin(
-            "bacnet-info",
-            include_str!("../scripts/bacnet-info.nse"),
-            &[Discovery, Ics, Safe],
-        ),
-        Script::builtin(
-            "hartip-info",
-            include_str!("../scripts/hartip-info.nse"),
-            &[Discovery, Ics, Safe],
-        ),
-        Script::builtin(
-            "tls-alpn",
-            include_str!("../scripts/tls-alpn.nse"),
-            &[Default, Discovery, Safe],
-        ),
-        Script::builtin(
-            "rsa-vuln-roca",
-            include_str!("../scripts/rsa-vuln-roca.nse"),
-            &[Vuln, Safe],
-        ),
-        Script::builtin(
-            "openflow-info",
-            include_str!("../scripts/openflow-info.nse"),
-            &[Discovery, Safe],
-        ),
-    ]
+/// Find `<key> = { ... }` and return the contents between the braces.
+fn find_braced_assignment(body: &str, key: &str) -> Option<String> {
+    let mut from = 0;
+    while let Some(rel) = body[from..].find(key) {
+        let idx = from + rel;
+        let after = &body[idx + key.len()..];
+        if after.trim_start().starts_with('=') {
+            if let Some(open) = after.find('{') {
+                if let Some(close) = after[open..].find('}') {
+                    return Some(after[open + 1..open + close].to_string());
+                }
+            }
+        }
+        from = idx + key.len();
+    }
+    None
+}
+
+/// Find `<key> = "..."` and return the quoted string.
+fn find_string_assignment(body: &str, key: &str) -> Option<String> {
+    let mut from = 0;
+    while let Some(rel) = body[from..].find(key) {
+        let idx = from + rel;
+        let after = &body[idx + key.len()..];
+        let after_trim = after.trim_start();
+        if let Some(eq) = after_trim.strip_prefix('=') {
+            if let Some(q) = eq.find('"') {
+                if let Some(close) = eq[q + 1..].find('"') {
+                    return Some(eq[q + 1..q + 1 + close].to_string());
+                }
+            }
+        }
+        from = idx + key.len();
+    }
+    None
 }

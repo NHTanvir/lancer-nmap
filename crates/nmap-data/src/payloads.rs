@@ -101,11 +101,11 @@ const OPENVPN_HELLO: [u8; 14] = [
 
 const MSSQL_PING: [u8; 1] = [0x02];
 
-const SSDP_MSEARCH: [u8; 96] = *b"M-SEARCH * HTTP/1.1\r\nHOST:239.255.255.250:1900\r\nMAN:\"ssdp:discover\"\r\nST:upnp:rootdevice\r\nMX:2\r\n\r\n";
+const SSDP_MSEARCH: [u8; 97] = *b"M-SEARCH * HTTP/1.1\r\nHOST:239.255.255.250:1900\r\nMAN:\"ssdp:discover\"\r\nST:upnp:rootdevice\r\nMX:2\r\n\r\n";
 
 const WS_DISCOVERY: [u8; 308] = [0u8; 308];
 
-const SIP_OPTIONS: [u8; 192] = *b"OPTIONS sip:nm SIP/2.0\r\nVia: SIP/2.0/UDP nm;branch=foo\r\nFrom: <sip:nm@nm>;tag=root\r\nTo: <sip:nm2@nm2>\r\nCall-ID: 50000\r\nCSeq: 42 OPTIONS\r\nMax-Forwards: 70\r\nContent-Length: 0\r\nContact: <sip:nm@nm>\r\nAccept: application/sdp\r\n\r\n";
+const SIP_OPTIONS: [u8; 223] = *b"OPTIONS sip:nm SIP/2.0\r\nVia: SIP/2.0/UDP nm;branch=foo\r\nFrom: <sip:nm@nm>;tag=root\r\nTo: <sip:nm2@nm2>\r\nCall-ID: 50000\r\nCSeq: 42 OPTIONS\r\nMax-Forwards: 70\r\nContent-Length: 0\r\nContact: <sip:nm@nm>\r\nAccept: application/sdp\r\n\r\n";
 
 const MDNS_QUERY: [u8; 34] = [
     0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x09, b'_', b's',

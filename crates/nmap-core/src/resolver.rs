@@ -26,7 +26,7 @@ impl Resolver {
         resolve_all: bool,
     ) -> Result<Self> {
         let mut cfg = if system_dns || custom_servers.is_empty() {
-            ResolverConfig::cloudflare_https()
+            ResolverConfig::cloudflare()
         } else {
             ResolverConfig::new()
         };

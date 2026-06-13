@@ -34,3 +34,4 @@ chrono.workspace = true
 rand.workspace = true
 walkdir.workspace = true
 glob.workspace = true
+include_dir.workspace = true

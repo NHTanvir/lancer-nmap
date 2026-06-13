@@ -3,10 +3,28 @@
 use once_cell::sync::Lazy;
 use std::collections::HashMap;
 
+/// The complete upstream `nmap-rpc` file, embedded verbatim.
+pub const FULL: &str = include_str!("../data/nmap-rpc");
+
 static RPC_MAP: Lazy<HashMap<u32, &'static str>> = Lazy::new(|| {
     let mut m = HashMap::new();
     for &(k, v) in RPC_TABLE {
         m.insert(k, v);
+    }
+    // Overlay the full embedded file: `name  number  aliases  # comment`.
+    for line in FULL.lines() {
+        let line = line.trim();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        let mut it = line.split_whitespace();
+        let name = match it.next() {
+            Some(n) => n,
+            None => continue,
+        };
+        if let Some(num) = it.next().and_then(|n| n.parse::<u32>().ok()) {
+            m.insert(num, name);
+        }
     }
     m
 });

@@ -52,13 +52,26 @@ impl Discovery {
             host.duration = host_start.elapsed();
             return Ok(host);
         }
+        // Loopback is always up — no probe needed, and TCP-ping to a closed
+        // loopback port can behave inconsistently across platforms.
+        if target.ip.is_loopback() {
+            host.state = HostState::Up;
+            host.state_reason = Some(StateReason::new("localhost"));
+            host.start = start;
+            host.end = chrono::Utc::now();
+            host.duration = host_start.elapsed();
+            return Ok(host);
+        }
         let probe_ports: Vec<u16> = if !opts.discovery.tcp_syn_ports.is_empty() {
             opts.discovery.tcp_syn_ports.clone()
         } else if !opts.discovery.tcp_ack_ports.is_empty() {
             opts.discovery.tcp_ack_ports.clone()
         } else {
-            // Default probes per upstream when -Pn / explicit pings absent.
-            vec![80, 443]
+            // Default TCP-connect ping set when no raw pings are possible and
+            // no explicit ping ports were requested. Broader than upstream's
+            // 80/443 SYN default because a connect ping needs a port that is
+            // either open or actively refused to confirm the host is up.
+            vec![80, 443, 22, 3389, 445, 139, 135, 8080]
         };
 
         let t = self.timing.initial_rtt_timeout.min(self.timing.max_rtt_timeout);
@@ -72,9 +85,14 @@ impl Discovery {
                     reason = Some(StateReason::new(format!("syn-ack/{p}")));
                     break;
                 }
-                Ok(Err(e)) if e.kind() == std::io::ErrorKind::ConnectionRefused => {
+                Ok(Err(e))
+                    if matches!(
+                        e.kind(),
+                        std::io::ErrorKind::ConnectionRefused | std::io::ErrorKind::ConnectionReset
+                    ) =>
+                {
                     alive = true;
-                    reason = Some(StateReason::new(format!("conn-refused/{p}")));
+                    reason = Some(StateReason::new(format!("reset/{p}")));
                     break;
                 }
                 _ => continue,
