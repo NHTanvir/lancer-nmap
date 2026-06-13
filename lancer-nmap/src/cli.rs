@@ -511,9 +511,7 @@ pub fn run(argv: Vec<String>) -> Result<()> {
         return Ok(());
     }
     if !args.script_help.is_empty() {
-        for s in &args.script_help {
-            println!("{s}: see {s}.nse for description.");
-        }
+        run_script_help(&args.script_help);
         return Ok(());
     }
     let opts = build_options(&args)?;
@@ -875,6 +873,43 @@ fn parse_duration(s: Option<&str>) -> Result<Option<Duration>> {
     };
     let n: u64 = num_str.parse()?;
     Ok(Some(Duration::from_millis(n * mul)))
+}
+
+/// `--script-help <name|glob>`: print categories + description for matching
+/// scripts from the embedded NSE corpus. Supports a trailing `*` wildcard.
+fn run_script_help(patterns: &[String]) {
+    let mut reg = nmap_nse::ScriptRegistry::new();
+    reg.load_builtin();
+    let matches_name = |pat: &str, name: &str| -> bool {
+        if let Some(prefix) = pat.strip_suffix('*') {
+            name.starts_with(prefix)
+        } else {
+            name == pat
+        }
+    };
+    let mut shown = 0usize;
+    for pat in patterns {
+        // Allow category names too (e.g. --script-help vuln).
+        let cat = nmap_nse::categories::Category::parse(pat);
+        for (name, script) in &reg.scripts {
+            let hit = matches_name(pat, name)
+                || cat.map(|c| script.categories.contains(&c)).unwrap_or(false);
+            if !hit {
+                continue;
+            }
+            shown += 1;
+            let cats: Vec<&str> = script.categories.iter().map(|c| c.as_str()).collect();
+            println!("\n{}", name);
+            println!("Categories: {}", cats.join(" "));
+            if !script.description.is_empty() {
+                let desc: Vec<&str> = script.description.lines().take(10).collect();
+                println!("{}", desc.join("\n").trim());
+            }
+        }
+    }
+    if shown == 0 {
+        println!("No NSE scripts matched: {}", patterns.join(", "));
+    }
 }
 
 fn run_healthcheck() {
