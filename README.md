@@ -84,12 +84,12 @@ output).
 |------|-------|
 | Target spec (IP / CIDR / octet-range / `-iL` / `-iR` / `--exclude`) | ✅ working |
 | `-sT` TCP connect scan | ✅ working (default unprivileged path) |
-| `-sV` service/version detection (full probe DB) | ✅ working |
+| `-sV` service/version detection (full probe DB) | ✅ working — extracts product/version/extrainfo (verified vs scanme.nmap.org) |
 | `-O` OS detection (full os-db, feature-scored) | ✅ working (TTL-class features; full 16-probe stack is roadmap) |
 | `--top-ports` / `-F` / `-p` (incl. `T:`/`U:`/`S:` tags) | ✅ working |
 | Output: Normal / XML (nmap.dtd) / Grepable / SK / JSON / SARIF / CSV | ✅ working |
 | `-oA` / `-oN` / `-oX` / `-oG` / `-oS` / `--open` / `--reason` | ✅ working |
-| NSE: 612 scripts registered, category/glob/name filtering, `-sC` / `--script` | ✅ registered + runnable subset |
+| NSE: 612 scripts registered; scripts execute (portrule + `action` + real `nmap.new_socket` TCP); `-sC` / `--script` / `--script-help` | ✅ engine works; socket-based scripts run, heavy-`nselib` fidelity ongoing |
 | GUI (3-pane, run scans, enriched results, export, themes) | ✅ working |
 | Host discovery: `-Pn` / `-sn` / TCP-connect ping | ✅ working |
 | `-sS/-sU/-sN/-sF/-sX/-sA/-sW/-sM` raw scans | ⏳ fall back to connect until the pnet/pcap raw TX+RX path lands (needs Npcap/root) |
