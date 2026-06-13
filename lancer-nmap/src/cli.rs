@@ -187,6 +187,9 @@ pub struct CliArgs {
     /// `--allports`
     #[arg(long = "allports", action = ArgAction::SetTrue, help_heading = "Service detection")]
     pub allports: bool,
+    /// `--dtls` — negotiate DTLS handshakes against UDP ports for `-sV` (7.96+).
+    #[arg(long = "dtls", action = ArgAction::SetTrue, help_heading = "Service detection")]
+    pub dtls: bool,
 
     // ============================================================
     // OS detection
@@ -682,7 +685,7 @@ fn build_options(args: &CliArgs) -> Result<ScanOptions> {
         all_probes: args.version_all,
         trace: args.version_trace,
         all_ports: args.allports,
-        dtls: false,
+        dtls: args.dtls || args.aggressive,
     };
 
     // OS detection
