@@ -24,10 +24,8 @@ pub fn ui(ctx: &egui::Context, app: &mut App) {
                 }
             });
             ui.menu_button("Tools", |ui| {
-                if ui.button("Run scan").clicked() {
-                    app.run_form(ctx);
-                    ui.close_menu();
-                }
+                // The primary Run action lives under the input form in the
+                // sidebar ("Run Scan"), right after the targets/options.
                 if ui.button("Compare scans (ndiff)…").clicked() {
                     ui.close_menu();
                 }

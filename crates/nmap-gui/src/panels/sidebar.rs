@@ -64,6 +64,32 @@ pub fn ui(ui: &mut egui::Ui, app: &mut App) {
     });
     *app.state.form.lock() = form;
 
+    // Primary action: Run the scan with everything entered above.
+    ui.add_space(12.0);
+    let has_target = !app
+        .state
+        .form
+        .lock()
+        .targets
+        .trim()
+        .is_empty();
+    let run = ui.add_sized(
+        [ui.available_width(), 34.0],
+        egui::Button::new(egui::RichText::new("▶  Run Scan").size(16.0).strong())
+            .fill(egui::Color32::from_rgb(0x1f, 0x7a, 0x33)),
+    );
+    if !has_target {
+        ui.label(
+            egui::RichText::new("enter a target above first")
+                .small()
+                .weak(),
+        );
+    }
+    if run.clicked() && has_target {
+        app.run_form(ui.ctx());
+    }
+    ui.add_space(8.0);
+
     ui.separator();
     ui.heading("Jobs");
     let jobs = app.state.jobs.lock().clone();

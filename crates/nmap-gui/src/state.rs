@@ -14,7 +14,7 @@ pub struct GuiState {
     pub theme: Arc<Mutex<crate::theme::Theme>>,
 }
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug)]
 pub struct FormState {
     pub targets: String,
     pub ports: String,
@@ -30,6 +30,29 @@ pub struct FormState {
     pub max_rate: Option<u64>,
     pub min_rate: Option<u64>,
     pub vpn_passthrough: bool,
+}
+
+impl Default for FormState {
+    fn default() -> Self {
+        Self {
+            targets: String::new(),
+            ports: String::new(),
+            fast: false,
+            aggressive: false,
+            service_scan: false,
+            os_scan: false,
+            traceroute: false,
+            udp: false,
+            default_scripts: false,
+            script_spec: String::new(),
+            // T3 (normal) — nmap's default. T0/T1 add multi-second/minute
+            // inter-probe delays that make interactive scans appear to hang.
+            timing: 3,
+            max_rate: None,
+            min_rate: None,
+            vpn_passthrough: false,
+        }
+    }
 }
 
 #[derive(Clone)]

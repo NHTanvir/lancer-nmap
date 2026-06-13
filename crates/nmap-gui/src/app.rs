@@ -7,6 +7,9 @@ use eframe::egui;
 pub struct App {
     pub state: GuiState,
     pub toasts: egui_notify::Toasts,
+    /// Set when launched with `LANCER_GUI_AUTORUN`; triggers a scan on the
+    /// first rendered frame so the GUI can be driven headlessly.
+    auto_run: bool,
 }
 
 impl App {
@@ -22,9 +25,31 @@ impl App {
             .unwrap_or_default();
         let visuals = state.theme.lock().visuals();
         cc.egui_ctx.set_visuals(visuals);
+
+        // Optional pre-load from the environment: lets a launcher (or a test)
+        // open the GUI with a target already entered, and auto-start the scan.
+        let mut auto_run = false;
+        if let Ok(t) = std::env::var("LANCER_GUI_TARGET") {
+            if !t.trim().is_empty() {
+                let mut form = state.form.lock();
+                form.targets = t;
+                if let Ok(p) = std::env::var("LANCER_GUI_PORTS") {
+                    form.ports = p;
+                }
+                form.service_scan = std::env::var("LANCER_GUI_SV").is_ok();
+                form.os_scan = std::env::var("LANCER_GUI_O").is_ok();
+                form.default_scripts = std::env::var("LANCER_GUI_SC").is_ok();
+                drop(form);
+                auto_run = std::env::var("LANCER_GUI_AUTORUN")
+                    .map(|v| v != "0")
+                    .unwrap_or(false);
+            }
+        }
+
         Self {
             state,
             toasts: egui_notify::Toasts::default(),
+            auto_run,
         }
     }
 
@@ -86,6 +111,10 @@ impl App {
 
 impl eframe::App for App {
     fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
+        if self.auto_run {
+            self.auto_run = false;
+            self.run_form(ctx);
+        }
         top_menu::ui(ctx, self);
         egui::SidePanel::left("sidebar")
             .resizable(true)
@@ -166,37 +195,45 @@ fn spawn_job(
     opts: nmap_core::options::ScanOptions,
     ctx: egui::Context,
 ) {
-    std::thread::spawn(move || {
-        let rt = match tokio::runtime::Builder::new_multi_thread()
-            .enable_all()
-            .build()
-        {
-            Ok(rt) => rt,
-            Err(_) => return,
-        };
-        rt.block_on(async move {
-            let scanner = nmap_core::scanner::Scanner::new(opts.clone());
-            let mut rx = match scanner.scan_stream().await {
-                Ok(rx) => rx,
+    // Generous stacks: parsing the ~8 MB embedded probe/OS databases during
+    // enrichment overflows the small default thread stacks.
+    let _ = std::thread::Builder::new()
+        .name("lancer-scan".into())
+        .stack_size(64 * 1024 * 1024)
+        .spawn(move || {
+            let rt = match tokio::runtime::Builder::new_multi_thread()
+                .enable_all()
+                .thread_stack_size(64 * 1024 * 1024)
+                .build()
+            {
+                Ok(rt) => rt,
                 Err(_) => return,
             };
-            mark_running(&state, job_id);
-            ctx.request_repaint();
-            let mut hosts = Vec::new();
-            while let Some(h) = rx.recv().await {
-                update_progress(&state, job_id, &h);
-                hosts.push(h);
+            rt.block_on(async move {
+                let scanner = nmap_core::scanner::Scanner::new(opts.clone());
+                let mut rx = match scanner.scan_stream().await {
+                    Ok(rx) => rx,
+                    Err(_) => return,
+                };
+                mark_running(&state, job_id);
                 ctx.request_repaint();
-            }
-            // Enrich with -sV / -O / NSE so the GUI shows the same depth as the
-            // CLI (service versions, OS guesses, script output).
-            let mut result = nmap_core::result::ScanResult::default();
-            result.hosts = hosts;
-            nmap_engine::enrich(&mut result, &opts).await;
-            finalize(&state, job_id, result.hosts);
-            ctx.request_repaint();
+                let mut hosts = Vec::new();
+                while let Some(h) = rx.recv().await {
+                    update_progress(&state, job_id, &h);
+                    hosts.push(h);
+                    // Show each host as soon as its port scan finishes.
+                    set_partial(&state, job_id, hosts.clone());
+                    ctx.request_repaint();
+                }
+                // Enrich with -sV / -O / NSE so the GUI shows the same depth as
+                // the CLI (service versions, OS guesses, script output).
+                let mut result = nmap_core::result::ScanResult::default();
+                result.hosts = hosts;
+                nmap_engine::enrich(&mut result, &opts).await;
+                finalize(&state, job_id, result.hosts);
+                ctx.request_repaint();
+            });
         });
-    });
 }
 
 fn mark_running(state: &GuiState, job_id: uuid::Uuid) {
@@ -212,6 +249,24 @@ fn update_progress(state: &GuiState, job_id: uuid::Uuid, host: &nmap_core::resul
     if let Some(j) = jobs.iter_mut().find(|j| j.id == job_id) {
         j.progress.hosts_done += 1;
         j.progress.last_host = Some(host.clone());
+    }
+}
+
+/// Publish in-progress results (after the port scan, before enrichment) so the
+/// table fills in immediately instead of waiting for the full `-sV`/`-O`/NSE pass.
+fn set_partial(state: &GuiState, job_id: uuid::Uuid, hosts: Vec<nmap_core::result::HostResult>) {
+    use nmap_core::result::{HostState, ScanResult};
+    let mut jobs = state.jobs.lock();
+    if let Some(j) = jobs.iter_mut().find(|j| j.id == job_id) {
+        let mut r = ScanResult::default();
+        r.summary_total = hosts.len();
+        r.summary_up = hosts
+            .iter()
+            .filter(|h| matches!(h.state, HostState::Up))
+            .count();
+        r.summary_down = r.summary_total - r.summary_up;
+        r.hosts = hosts;
+        j.result = Some(r); // status stays Running
     }
 }
 
