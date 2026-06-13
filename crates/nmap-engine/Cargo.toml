@@ -1,0 +1,19 @@
+[package]
+name = "nmap-engine"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "Shared post-scan enrichment (-sV service detection, -O OS detection, NSE) used by both the CLI and GUI front-ends"
+
+[dependencies]
+nmap-core = { path = "../nmap-core" }
+nmap-probes = { path = "../nmap-probes" }
+nmap-osdb = { path = "../nmap-osdb" }
+nmap-nse = { path = "../nmap-nse" }
+nmap-data = { path = "../nmap-data" }
+
+tokio.workspace = true
+indexmap.workspace = true
+anyhow.workspace = true
+tracing.workspace = true

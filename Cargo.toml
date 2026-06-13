@@ -8,6 +8,7 @@ members = [
     "crates/nmap-nse",
     "crates/nmap-data",
     "crates/nmap-output",
+    "crates/nmap-engine",
     "crates/nmap-gui",
     "tools/ndiff",
     "tools/ncat",

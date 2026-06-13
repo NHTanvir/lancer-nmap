@@ -2364,6 +2364,7 @@ dependencies = [
  "indexmap",
  "nmap-core",
  "nmap-data",
+ "nmap-engine",
  "nmap-gui",
  "nmap-nse",
  "nmap-osdb",
@@ -2736,6 +2737,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "nmap-engine"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "indexmap",
+ "nmap-core",
+ "nmap-data",
+ "nmap-nse",
+ "nmap-osdb",
+ "nmap-probes",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
 name = "nmap-gui"
 version = "0.1.0"
 dependencies = [
@@ -2753,6 +2769,7 @@ dependencies = [
  "indexmap",
  "nmap-core",
  "nmap-data",
+ "nmap-engine",
  "nmap-osdb",
  "nmap-output",
  "nmap-probes",

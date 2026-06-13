@@ -12,6 +12,7 @@ nmap-probes = { path = "../nmap-probes" }
 nmap-osdb = { path = "../nmap-osdb" }
 nmap-output = { path = "../nmap-output" }
 nmap-data = { path = "../nmap-data" }
+nmap-engine = { path = "../nmap-engine" }
 
 eframe.workspace = true
 egui.workspace = true

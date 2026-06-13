@@ -54,7 +54,7 @@ pub struct CliArgs {
     // Host discovery
     // ============================================================
     /// List Scan (-sL): list targets without scanning.
-    #[arg(short = 'L', long = "list-targets", action = ArgAction::SetTrue, help_heading = "Host discovery")]
+    #[arg(short = 'L', long = "list-targets", alias = "sL", action = ArgAction::SetTrue, help_heading = "Host discovery")]
     pub list_only: bool,
     /// Ping Scan — disable port scan (-sn).
     #[arg(short = 'n', long = "ping-only", action = ArgAction::SetTrue, help_heading = "Host discovery")]
@@ -448,7 +448,7 @@ pub fn normalize_nmap_argv(argv: Vec<String>) -> Vec<String> {
     // Multi-char boolean flags (no value).
     const BOOL_LONG: &[&str] = &[
         "Pn", "PE", "PP", "PM", "PR", "sS", "sT", "sU", "sN", "sF", "sX", "sA",
-        "sW", "sM", "sY", "sZ", "sO", "sn", "sV", "sC", "sL", "sR",
+        "sW", "sM", "sY", "sZ", "sO", "sn", "sV", "sC", "sL",
     ];
     let mut out = Vec::with_capacity(argv.len());
     let mut iter = argv.into_iter();
@@ -469,7 +469,7 @@ pub fn normalize_nmap_argv(argv: Vec<String>) -> Vec<String> {
             continue;
         }
         if let Some(rest) = body.strip_prefix("iR") {
-            out.push("--iR".to_string());
+            out.push("--random-targets".to_string());
             if !rest.is_empty() {
                 out.push(rest.to_string());
             }
@@ -510,12 +510,6 @@ pub fn run(argv: Vec<String>) -> Result<()> {
         run_self_test();
         return Ok(());
     }
-    if args.list_only {
-        for t in &args.targets {
-            println!("{t}");
-        }
-        return Ok(());
-    }
     if !args.script_help.is_empty() {
         for s in &args.script_help {
             println!("{s}: see {s}.nse for description.");
@@ -528,8 +522,32 @@ pub fn run(argv: Vec<String>) -> Result<()> {
         .enable_all()
         .thread_stack_size(64 * 1024 * 1024)
         .build()?;
+    // `-sL` / --list-targets: expand and resolve every target without scanning.
+    if args.list_only {
+        let targets = rt.block_on(scanner.resolve_targets())?;
+        for t in &targets {
+            match &t.hostname {
+                Some(h) => println!("Nmap scan report for {} ({})", h, t.ip),
+                None => println!("Nmap scan report for {}", t.ip),
+            }
+        }
+        println!(
+            "lancer-nmap done: {} IP address{} listed (not scanned)",
+            targets.len(),
+            if targets.len() == 1 { "" } else { "es" }
+        );
+        return Ok(());
+    }
     let mut result = rt.block_on(scanner.run())?;
     rt.block_on(crate::runner::enrich(&mut result, &opts));
+    // `--open`: keep only open / open|filtered ports across all output formats.
+    if args.open {
+        use nmap_core::result::PortState;
+        for h in &mut result.hosts {
+            h.ports
+                .retain(|p| matches!(p.state, PortState::Open | PortState::OpenFiltered));
+        }
+    }
     let argv_joined: Vec<String> = std::env::args().collect();
     result.args = argv_joined.join(" ");
     crate::runner::emit_outputs(&result, &args)?;

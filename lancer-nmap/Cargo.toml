@@ -22,6 +22,7 @@ nmap-osdb = { path = "../crates/nmap-osdb" }
 nmap-nse = { path = "../crates/nmap-nse" }
 nmap-data = { path = "../crates/nmap-data" }
 nmap-output = { path = "../crates/nmap-output" }
+nmap-engine = { path = "../crates/nmap-engine" }
 nmap-gui = { path = "../crates/nmap-gui" }
 
 clap.workspace = true

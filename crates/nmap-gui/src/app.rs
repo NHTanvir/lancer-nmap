@@ -175,7 +175,7 @@ fn spawn_job(
             Err(_) => return,
         };
         rt.block_on(async move {
-            let scanner = nmap_core::scanner::Scanner::new(opts);
+            let scanner = nmap_core::scanner::Scanner::new(opts.clone());
             let mut rx = match scanner.scan_stream().await {
                 Ok(rx) => rx,
                 Err(_) => return,
@@ -188,7 +188,12 @@ fn spawn_job(
                 hosts.push(h);
                 ctx.request_repaint();
             }
-            finalize(&state, job_id, hosts);
+            // Enrich with -sV / -O / NSE so the GUI shows the same depth as the
+            // CLI (service versions, OS guesses, script output).
+            let mut result = nmap_core::result::ScanResult::default();
+            result.hosts = hosts;
+            nmap_engine::enrich(&mut result, &opts).await;
+            finalize(&state, job_id, result.hosts);
             ctx.request_repaint();
         });
     });
