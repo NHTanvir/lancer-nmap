@@ -95,38 +95,142 @@ fn install_stdnse(lua: &Lua) -> LuaResult<()> {
         "make_buffer",
         lua.create_function(|_, initial: Option<String>| Ok(initial.unwrap_or_default()))?,
     )?;
+    // `stdnse.get_script_args(...)` — scripts use `... or default`, so nil is
+    // a safe baseline until per-script-arg wiring lands.
+    m.set(
+        "get_script_args",
+        lua.create_function(|_, _names: mlua::MultiValue| Ok(mlua::Value::Nil))?,
+    )?;
+    // `stdnse.output_table()` — returns a plain table scripts fill with k/v
+    // pairs and return from `action`; our action-return flattener prints it.
+    m.set(
+        "output_table",
+        lua.create_function(|lua, ()| lua.create_table())?,
+    )?;
+    for name in ["debug2", "debug3", "print_debug", "print_verbose"] {
+        m.set(
+            name,
+            lua.create_function(|_, _: mlua::MultiValue| Ok(()))?,
+        )?;
+    }
     register(lua, "stdnse", m)
 }
 
 fn install_shortport(lua: &Lua) -> LuaResult<()> {
     let m = lua.create_table()?;
+    // `shortport.http` / `shortport.ssl` are themselves portrule functions,
+    // used as `portrule = shortport.http` — so they take (host, port).
     m.set(
         "http",
-        lua.create_function(|_, port: mlua::Value| {
+        lua.create_function(|_, (_host, port): (mlua::Value, mlua::Value)| {
             let n = port_number(&port);
             Ok(matches!(
                 n,
-                Some(80) | Some(8000) | Some(8008) | Some(8080) | Some(8081) | Some(8888)
+                Some(80) | Some(280) | Some(443) | Some(591) | Some(593) | Some(8000)
+                    | Some(8008) | Some(8080) | Some(8081) | Some(8443) | Some(8888)
             ))
         })?,
     )?;
     m.set(
         "ssl",
-        lua.create_function(|_, port: mlua::Value| {
+        lua.create_function(|_, (_host, port): (mlua::Value, mlua::Value)| {
             let n = port_number(&port);
             Ok(matches!(
                 n,
-                Some(443) | Some(465) | Some(636) | Some(993) | Some(995) | Some(8443)
+                Some(443) | Some(465) | Some(636) | Some(993) | Some(995) | Some(989)
+                    | Some(990) | Some(992) | Some(5061) | Some(8443)
             ))
         })?,
     )?;
+    // `shortport.port_or_service(ports, services, ...)` returns a portrule
+    // function that matches the given port numbers / service names.
     m.set(
         "port_or_service",
-        lua.create_function(|_, (_p, _s, _proto, _state): (mlua::Value, mlua::Value, mlua::Value, mlua::Value)| {
-            Ok(true)
+        lua.create_function(|lua, args: mlua::MultiValue| {
+            let mut it = args.into_iter();
+            let ports = value_to_u16_set(it.next().as_ref());
+            let services = value_to_string_set(it.next().as_ref());
+            let rule = lua.create_function(move |_, (_host, port): (mlua::Value, mlua::Value)| {
+                let num = port_number(&port);
+                let svc = port_service_name(&port);
+                let by_port = num.map(|n| ports.contains(&n)).unwrap_or(false);
+                let by_svc = svc
+                    .as_ref()
+                    .map(|s| services.iter().any(|x| x == s))
+                    .unwrap_or(false);
+                Ok(by_port || by_svc)
+            })?;
+            Ok(rule)
+        })?,
+    )?;
+    // `shortport.portnumber(ports, protos)` → portrule matching the numbers.
+    m.set(
+        "portnumber",
+        lua.create_function(|lua, args: mlua::MultiValue| {
+            let ports = value_to_u16_set(args.into_iter().next().as_ref());
+            let rule = lua.create_function(move |_, (_host, port): (mlua::Value, mlua::Value)| {
+                Ok(port_number(&port).map(|n| ports.contains(&n)).unwrap_or(false))
+            })?;
+            Ok(rule)
         })?,
     )?;
     register(lua, "shortport", m)
+}
+
+fn value_to_u16_set(v: Option<&mlua::Value>) -> std::collections::HashSet<u16> {
+    let mut set = std::collections::HashSet::new();
+    match v {
+        Some(mlua::Value::Integer(n)) => {
+            set.insert(*n as u16);
+        }
+        Some(mlua::Value::Number(n)) => {
+            set.insert(*n as u16);
+        }
+        Some(mlua::Value::Table(t)) => {
+            for pair in t.clone().pairs::<mlua::Value, mlua::Value>() {
+                if let Ok((_, val)) = pair {
+                    if let Some(n) = port_number(&val) {
+                        set.insert(n);
+                    }
+                }
+            }
+        }
+        _ => {}
+    }
+    set
+}
+
+fn value_to_string_set(v: Option<&mlua::Value>) -> Vec<String> {
+    let mut out = Vec::new();
+    match v {
+        Some(mlua::Value::String(s)) => {
+            if let Ok(s) = s.to_str() {
+                out.push(s.to_string());
+            }
+        }
+        Some(mlua::Value::Table(t)) => {
+            for pair in t.clone().pairs::<mlua::Value, mlua::Value>() {
+                if let Ok((_, mlua::Value::String(s))) = pair {
+                    if let Ok(s) = s.to_str() {
+                        out.push(s.to_string());
+                    }
+                }
+            }
+        }
+        _ => {}
+    }
+    out
+}
+
+fn port_service_name(port: &mlua::Value) -> Option<String> {
+    if let mlua::Value::Table(t) = port {
+        if let Ok(mlua::Value::Table(svc)) = t.get::<mlua::Value>("service") {
+            if let Ok(mlua::Value::String(n)) = svc.get::<mlua::Value>("name") {
+                return n.to_str().ok().map(|s| s.to_string());
+            }
+        }
+    }
+    None
 }
 
 fn install_nmap(lua: &Lua, ctx: &ScriptContext) -> LuaResult<()> {
@@ -152,7 +256,125 @@ fn install_nmap(lua: &Lua, ctx: &ScriptContext) -> LuaResult<()> {
         "registry",
         lua.create_table()?,
     )?;
+    // Real blocking-TCP socket factory — `nmap.new_socket()` returns a socket
+    // object scripts drive with :connect/:send/:receive/:close. We run inside
+    // a blocking task, so synchronous std::net I/O is correct here.
+    m.set(
+        "new_socket",
+        lua.create_function(|_, _proto: mlua::Value| Ok(NseSocket::new()))?,
+    )?;
     register(lua, "nmap", m)
+}
+
+/// A blocking TCP socket exposed to NSE scripts as `nmap.new_socket()`.
+struct NseSocket {
+    stream: Option<std::net::TcpStream>,
+    timeout: std::time::Duration,
+}
+
+impl NseSocket {
+    fn new() -> Self {
+        Self {
+            stream: None,
+            timeout: std::time::Duration::from_secs(5),
+        }
+    }
+}
+
+impl mlua::UserData for NseSocket {
+    fn add_methods<M: mlua::UserDataMethods<Self>>(methods: &mut M) {
+        methods.add_method_mut("set_timeout", |_, this, ms: u64| {
+            this.timeout = std::time::Duration::from_millis(ms.max(1));
+            Ok(())
+        });
+        methods.add_method_mut(
+            "connect",
+            |_, this, (host, port, _proto): (String, mlua::Value, Option<String>)| {
+                use std::net::ToSocketAddrs;
+                let port = port_number(&port).unwrap_or(0);
+                let to = this.timeout;
+                let addrs = match (host.as_str(), port).to_socket_addrs() {
+                    Ok(a) => a,
+                    Err(e) => return Ok((false, e.to_string())),
+                };
+                for addr in addrs {
+                    if let Ok(s) = std::net::TcpStream::connect_timeout(&addr, to) {
+                        let _ = s.set_read_timeout(Some(to));
+                        let _ = s.set_write_timeout(Some(to));
+                        this.stream = Some(s);
+                        return Ok((true, String::new()));
+                    }
+                }
+                Ok((false, "connect failed".to_string()))
+            },
+        );
+        methods.add_method_mut("send", |_, this, data: mlua::String| {
+            use std::io::Write;
+            match &mut this.stream {
+                Some(s) => match s.write_all(&data.as_bytes()) {
+                    Ok(_) => Ok((true, String::new())),
+                    Err(e) => Ok((false, e.to_string())),
+                },
+                None => Ok((false, "not connected".to_string())),
+            }
+        });
+        methods.add_method_mut("receive", |lua, this, ()| {
+            use std::io::Read;
+            match &mut this.stream {
+                Some(s) => {
+                    let mut buf = [0u8; 8192];
+                    match s.read(&mut buf) {
+                        Ok(0) => Ok((false, lua.create_string("EOF")?)),
+                        Ok(n) => Ok((true, lua.create_string(&buf[..n])?)),
+                        Err(e) => Ok((false, lua.create_string(e.to_string())?)),
+                    }
+                }
+                None => Ok((false, lua.create_string("not connected")?)),
+            }
+        });
+        methods.add_method_mut("receive_bytes", |lua, this, n: usize| {
+            use std::io::Read;
+            match &mut this.stream {
+                Some(s) => {
+                    let mut buf = vec![0u8; n.clamp(1, 65536)];
+                    match s.read(&mut buf) {
+                        Ok(got) => Ok((true, lua.create_string(&buf[..got])?)),
+                        Err(e) => Ok((false, lua.create_string(e.to_string())?)),
+                    }
+                }
+                None => Ok((false, lua.create_string("not connected")?)),
+            }
+        });
+        // Approximate receive_lines with a single read of available data.
+        methods.add_method_mut("receive_lines", |lua, this, _n: usize| {
+            use std::io::Read;
+            match &mut this.stream {
+                Some(s) => {
+                    let mut buf = [0u8; 8192];
+                    match s.read(&mut buf) {
+                        Ok(0) => Ok((false, lua.create_string("EOF")?)),
+                        Ok(got) => Ok((true, lua.create_string(&buf[..got])?)),
+                        Err(e) => Ok((false, lua.create_string(e.to_string())?)),
+                    }
+                }
+                None => Ok((false, lua.create_string("not connected")?)),
+            }
+        });
+        methods.add_method_mut("close", |_, this, ()| {
+            this.stream = None;
+            Ok(true)
+        });
+        methods.add_method_mut("get_info", |_, this, ()| match &this.stream {
+            Some(s) => {
+                let local = s.local_addr().map(|a| a.ip().to_string()).unwrap_or_default();
+                let lport = s.local_addr().map(|a| a.port()).unwrap_or(0);
+                let peer = s.peer_addr().map(|a| a.ip().to_string()).unwrap_or_default();
+                let pport = s.peer_addr().map(|a| a.port()).unwrap_or(0);
+                Ok((true, local, lport, peer, pport))
+            }
+            None => Ok((false, String::new(), 0u16, String::new(), 0u16)),
+        });
+    }
 }
 
 fn install_http(lua: &Lua, _ctx: &ScriptContext) -> LuaResult<()> {

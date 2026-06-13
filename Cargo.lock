@@ -2741,6 +2741,7 @@ name = "nmap-engine"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "futures",
  "indexmap",
  "nmap-core",
  "nmap-data",

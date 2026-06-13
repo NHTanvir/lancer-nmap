@@ -17,3 +17,4 @@ tokio.workspace = true
 indexmap.workspace = true
 anyhow.workspace = true
 tracing.workspace = true
+futures.workspace = true

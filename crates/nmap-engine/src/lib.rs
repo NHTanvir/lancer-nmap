@@ -97,30 +97,34 @@ async fn run_nse(
     if scripts.is_empty() {
         return;
     }
+    use futures::stream::{self, StreamExt};
     let host_arc = Arc::new(host.clone());
     let mut args = indexmap::IndexMap::new();
     for (k, v) in &opts.nse.script_args {
         args.insert(k.clone(), v.clone());
     }
-    let ports_snapshot = host.ports.clone();
-    for port in ports_snapshot {
-        if !matches!(port.state, PortState::Open) {
-            continue;
-        }
+    // Build (port, script) invocations for every open port and run them with
+    // bounded concurrency so a port matching many scripts doesn't serialize.
+    let mut futs = Vec::new();
+    for port in host.ports.iter().filter(|p| matches!(p.state, PortState::Open)) {
         for script in scripts {
             let inv = nmap_nse::ScriptInvocation {
                 host: host_arc.clone(),
                 port: Some(port.clone()),
                 args: args.clone(),
-                timeout: std::time::Duration::from_secs(60),
+                timeout: std::time::Duration::from_secs(20),
             };
-            let out = engine.run_script(script, inv).await;
-            if out.result.output.is_empty() {
-                continue;
-            }
-            if let Some(p) = host.ports.iter_mut().find(|p| p.port == port.port) {
-                p.scripts.push(out.result);
-            }
+            let port_key = port.port;
+            futs.push(async move { (port_key, engine.run_script(script, inv).await) });
+        }
+    }
+    let results: Vec<_> = stream::iter(futs).buffer_unordered(16).collect().await;
+    for (port_key, out) in results {
+        if out.result.output.is_empty() {
+            continue;
+        }
+        if let Some(p) = host.ports.iter_mut().find(|p| p.port == port_key) {
+            p.scripts.push(out.result);
         }
     }
 }

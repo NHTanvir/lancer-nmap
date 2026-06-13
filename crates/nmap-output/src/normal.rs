@@ -50,10 +50,28 @@ pub fn emit(r: &ScanResult) -> String {
                             .map(|s| s.to_string())
                     })
                     .unwrap_or_default();
+                // VERSION column mirrors nmap: "product version (extrainfo)".
                 let version = p
                     .service
                     .as_ref()
-                    .and_then(|s| s.version.clone())
+                    .map(|s| {
+                        let mut v = String::new();
+                        if let Some(pr) = &s.product {
+                            v.push_str(pr);
+                        }
+                        if let Some(ver) = &s.version {
+                            if !v.is_empty() {
+                                v.push(' ');
+                            }
+                            v.push_str(ver);
+                        }
+                        if let Some(ei) = &s.extra_info {
+                            if !ei.is_empty() {
+                                v.push_str(&format!(" ({ei})"));
+                            }
+                        }
+                        v.trim().to_string()
+                    })
                     .unwrap_or_default();
                 let _ = writeln!(
                     out,

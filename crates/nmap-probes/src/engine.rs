@@ -40,9 +40,11 @@ impl ServiceEngine {
 
     pub fn load_text(text: &str) -> Self {
         let probes = parse_probes(text);
+        let cache = Arc::new(RwLock::new(HashMap::new()));
+        precompile(&probes, &cache);
         Self {
             probes: Arc::new(probes),
-            cache: Arc::new(RwLock::new(HashMap::new())),
+            cache,
             intensity: 7,
         }
     }
@@ -66,16 +68,11 @@ impl ServiceEngine {
     }
 
     fn regex_for(&self, rule: &MatchRule) -> Option<Regex> {
-        let key = format!(
-            "{}{}{}",
-            if rule.case_insensitive { "(?i)" } else { "" },
-            if rule.multiline { "(?s)" } else { "" },
-            rule.pattern
-        );
+        let key = cache_key(rule);
         if let Some(r) = self.cache.read().get(&key).cloned() {
             return Some(r);
         }
-        let r = Regex::new(&key).ok()?;
+        let r = build_regex(&key)?;
         self.cache.write().insert(key, r.clone());
         Some(r)
     }
@@ -88,6 +85,10 @@ impl ServiceEngine {
     ) -> ProbeOutcome {
         let mut softmatch: Option<ServiceInfo> = None;
         let mut tried: Vec<String> = Vec::new();
+        // Bound the per-port version sweep: this engine probes serially, so an
+        // unbounded rarity sweep against a silent port would stall. Cap total
+        // wall-time and return any softmatch we already have.
+        let port_deadline = std::time::Instant::now() + Duration::from_secs(15);
 
         for probe in self
             .probes
@@ -104,8 +105,13 @@ impl ServiceEngine {
             if !probe.ports.is_empty() && !probe.ports.contains(port) {
                 continue;
             }
+            if std::time::Instant::now() > port_deadline {
+                break;
+            }
             tried.push(probe.name.clone());
-            let wait = Duration::from_millis(probe.total_wait_ms.max(1000) as u64);
+            // Cap each probe's read wait so a silent port doesn't burn the full
+            // upstream `totalwaitms` (often 6s) per probe in our serial loop.
+            let wait = Duration::from_millis(probe.total_wait_ms.clamp(1000, 2500) as u64);
             let bytes = match plain_probe(host, port, probe, wait).await {
                 Ok(v) => v,
                 Err(e) => {
@@ -113,7 +119,7 @@ impl ServiceEngine {
                     continue;
                 }
             };
-            if let Some(outcome) = self.match_bytes(probe, &bytes) {
+            if let Some(outcome) = self.match_bytes(probe, &bytes, port_deadline) {
                 match outcome.0 {
                     MatchKind::Hard => return ProbeOutcome::Hard(outcome.1),
                     MatchKind::Soft => {
@@ -130,9 +136,25 @@ impl ServiceEngine {
         }
     }
 
-    fn match_bytes(&self, probe: &Probe, bytes: &[u8]) -> Option<(MatchKind, ServiceInfo)> {
-        for rule in &probe.matches {
-            let re = self.regex_for(rule)?;
+    fn match_bytes(
+        &self,
+        probe: &Probe,
+        bytes: &[u8],
+        deadline: std::time::Instant,
+    ) -> Option<(MatchKind, ServiceInfo)> {
+        for (i, rule) in probe.matches.iter().enumerate() {
+            // Bail if this probe's match sweep has blown the per-port budget
+            // (cold-cache regex compilation of thousands of rules is costly).
+            if i % 128 == 0 && std::time::Instant::now() > deadline {
+                break;
+            }
+            // Skip patterns the Rust `regex` engine can't compile (the upstream
+            // DB uses PCRE features like backrefs/look-around) rather than
+            // aborting the whole probe's match list.
+            let re = match self.regex_for(rule) {
+                Some(r) => r,
+                None => continue,
+            };
             if let Some(caps) = re.captures(bytes) {
                 let mut info = ServiceInfo::default();
                 info.name = Some(rule.service.clone());
@@ -164,5 +186,74 @@ impl ServiceEngine {
             }
         }
         None
+    }
+}
+
+/// Cache key for a match rule's compiled regex (flags + pattern).
+fn cache_key(rule: &MatchRule) -> String {
+    format!(
+        "{}{}{}",
+        if rule.case_insensitive { "(?i)" } else { "" },
+        if rule.multiline { "(?s)" } else { "" },
+        rule.pattern
+    )
+}
+
+/// Compile a probe pattern with a bounded program size so pathological
+/// upstream patterns (the DB has ~8000, some PCRE-heavy) fail to build fast
+/// instead of costing seconds each. Returns `None` for patterns the Rust
+/// `regex` engine can't represent (backreferences, look-around).
+fn build_regex(key: &str) -> Option<Regex> {
+    regex::bytes::RegexBuilder::new(key)
+        // nmap-service-probes patterns are byte-oriented; Unicode-aware
+        // compilation builds far larger/slower programs for the same pattern.
+        .unicode(false)
+        .size_limit(1 << 18)
+        .dfa_size_limit(1 << 18)
+        .build()
+        .ok()
+}
+
+/// Pre-compile every match rule's regex once, in parallel across CPU cores, so
+/// the per-port version sweep runs against a hot cache instead of paying the
+/// cold-compile cost (tens of seconds) on the first scanned port.
+fn precompile(probes: &[Probe], cache: &RwLock<HashMap<String, Regex>>) {
+    let mut seen = std::collections::HashSet::new();
+    let mut keys: Vec<String> = Vec::new();
+    for p in probes {
+        for r in &p.matches {
+            let k = cache_key(r);
+            if seen.insert(k.clone()) {
+                keys.push(k);
+            }
+        }
+    }
+    if keys.is_empty() {
+        return;
+    }
+    let workers = std::thread::available_parallelism()
+        .map(|n| n.get())
+        .unwrap_or(4)
+        .min(keys.len());
+    let chunk = keys.len().div_ceil(workers);
+    let compiled: Vec<(String, Regex)> = std::thread::scope(|s| {
+        let handles: Vec<_> = keys
+            .chunks(chunk)
+            .map(|c| {
+                s.spawn(move || {
+                    c.iter()
+                        .filter_map(|k| build_regex(k).map(|r| (k.clone(), r)))
+                        .collect::<Vec<_>>()
+                })
+            })
+            .collect();
+        handles
+            .into_iter()
+            .flat_map(|h| h.join().unwrap_or_default())
+            .collect()
+    });
+    let mut c = cache.write();
+    for (k, r) in compiled {
+        c.insert(k, r);
     }
 }
