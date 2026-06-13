@@ -192,6 +192,16 @@ pub fn parse_port_spec(spec: &str, default_proto: Protocol) -> Result<PortSpec> 
             continue;
         }
 
+        // `[lo-hi]` — only the named (common-service) ports within the range,
+        // matching upstream `-p [range]` semantics.
+        let (common_only, body) = match body.strip_prefix('[').and_then(|b| b.strip_suffix(']')) {
+            Some(inner) => (true, inner),
+            None => (false, body),
+        };
+        if body.is_empty() {
+            continue;
+        }
+
         // Range or single port
         if let Some((lo, hi)) = body.split_once('-') {
             let lo: u16 = if lo.is_empty() {
@@ -209,7 +219,16 @@ pub fn parse_port_spec(spec: &str, default_proto: Protocol) -> Result<PortSpec> 
             if lo > hi {
                 return Err(Error::InvalidPort(format!("{lo}-{hi} reversed")));
             }
-            insert_range(&mut out, current_proto, lo, hi);
+            if common_only {
+                let proto_str = current_proto.short();
+                for p in lo..=hi {
+                    if nmap_data::services::service_name(p, proto_str).is_some() {
+                        insert(&mut out, current_proto, p);
+                    }
+                }
+            } else {
+                insert_range(&mut out, current_proto, lo, hi);
+            }
         } else if body == "*" {
             insert_range(&mut out, current_proto, 1, 65535);
         } else {
@@ -257,6 +276,16 @@ pub fn top_ports(n: usize) -> PortSpec {
     }
     for &p in nmap_data::services::top_n_udp(n.max(8)) {
         s.udp.insert(p);
+    }
+    s
+}
+
+/// Build a port spec from `--port-ratio`: every TCP port whose `nmap-services`
+/// open-frequency meets or exceeds `ratio`.
+pub fn by_ratio(ratio: f32) -> PortSpec {
+    let mut s = PortSpec::default();
+    for p in nmap_data::services::tcp_ports_min_freq(ratio) {
+        s.tcp.insert(p);
     }
     s
 }

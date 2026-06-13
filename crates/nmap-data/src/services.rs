@@ -82,6 +82,21 @@ static FULL_NAMES: Lazy<HashMap<(u16, &'static str), &'static str>> = Lazy::new(
     m
 });
 
+/// TCP ports whose upstream `nmap-services` open-frequency is at least
+/// `ratio`, sorted by frequency descending. Backs `--port-ratio`.
+pub fn tcp_ports_min_freq(ratio: f32) -> Vec<u16> {
+    let mut rows: Vec<&SvcRow> = FULL_ROWS
+        .iter()
+        .filter(|r| r.proto == "tcp" && r.freq >= ratio)
+        .collect();
+    rows.sort_by(|a, b| {
+        b.freq
+            .partial_cmp(&a.freq)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+    rows.into_iter().map(|r| r.port).collect()
+}
+
 #[derive(Clone, Debug)]
 pub struct ServiceEntry {
     pub name: &'static str,
@@ -297,3 +312,16 @@ const UDP_PORT_NAMES: &[(u16, &str)] = &[
     (8200, "trivnet1"), (10000, "snet-sensor-mgmt"), (11211, "memcache"),
     (33434, "traceroute"), (38412, "ngap"),
 ];
+
+#[cfg(test)]
+mod ratio_tests {
+    #[test]
+    fn ratio_filters_by_frequency() {
+        // Only port 80 (http, ~0.484) exceeds 0.4 in nmap-services.
+        let high = super::tcp_ports_min_freq(0.4);
+        assert_eq!(high, vec![80]);
+        let mid = super::tcp_ports_min_freq(0.2);
+        let low = super::tcp_ports_min_freq(0.001);
+        assert!(mid.contains(&80) && mid.len() < low.len());
+    }
+}

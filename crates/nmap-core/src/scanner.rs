@@ -80,6 +80,8 @@ impl Scanner {
             crate::port::top_ports(100)
         } else if let Some(n) = ps.top_ports {
             crate::port::top_ports(n)
+        } else if let Some(ratio) = ps.port_ratio {
+            crate::port::by_ratio(ratio)
         } else {
             ps.ports.clone()
         };

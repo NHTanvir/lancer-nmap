@@ -446,7 +446,7 @@ pub fn normalize_nmap_argv(argv: Vec<String>) -> Vec<String> {
     // Multi-char flags that take a value (attached as `-PS22` or following as
     // `-PS 22`).
     const VALUE_LONG: &[&str] = &[
-        "PS", "PA", "PU", "PY", "PO", "sI", "oN", "oX", "oG", "oS", "oA", "oJ",
+        "PS", "PA", "PU", "PY", "PO", "sI", "oN", "oX", "oG", "oS", "oA", "oJ", "oSARIF", "oCSV",
     ];
     // Multi-char boolean flags (no value).
     const BOOL_LONG: &[&str] = &[
@@ -478,8 +478,13 @@ pub fn normalize_nmap_argv(argv: Vec<String>) -> Vec<String> {
             }
             continue;
         }
-        // Value-taking multi-char flag, possibly with an attached value.
-        if let Some(name) = VALUE_LONG.iter().find(|n| body.starts_with(**n)) {
+        // Value-taking multi-char flag, possibly with an attached value. Use
+        // the LONGEST matching name so `-oSARIF` isn't captured by `oS`.
+        if let Some(name) = VALUE_LONG
+            .iter()
+            .filter(|n| body.starts_with(**n))
+            .max_by_key(|n| n.len())
+        {
             let rest = &body[name.len()..];
             if rest.is_empty() {
                 out.push(format!("--{name}"));
@@ -814,6 +819,7 @@ fn build_options(args: &CliArgs) -> Result<ScanOptions> {
     }
     if opts.port_scan.ports.is_empty()
         && opts.port_scan.top_ports.is_none()
+        && opts.port_scan.port_ratio.is_none()
         && !opts.port_scan.fast
     {
         opts.port_scan.top_ports = Some(1000);
