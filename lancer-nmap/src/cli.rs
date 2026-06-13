@@ -431,6 +431,10 @@ pub struct CliArgs {
     /// `--healthcheck`
     #[arg(long = "healthcheck", action = ArgAction::SetTrue, help_heading = "Misc")]
     pub healthcheck: bool,
+    /// `--serve` — after scanning, keep the local HTTP control plane
+    /// (`/v1/state`, `/v1/import`, `/v1/export`) running on 127.0.0.1.
+    #[arg(long = "serve", action = ArgAction::SetTrue, help_heading = "Misc")]
+    pub serve: bool,
     /// `-h` / `--help`
     #[arg(short = 'h', long = "help", action = ArgAction::Help, help_heading = "Misc")]
     pub help: Option<bool>,
@@ -557,6 +561,23 @@ pub fn run(argv: Vec<String>) -> Result<()> {
     let argv_joined: Vec<String> = std::env::args().collect();
     result.args = argv_joined.join(" ");
     crate::runner::emit_outputs(&result, &args)?;
+
+    // `--serve`: keep the Lancer control-plane HTTP API alive so other tools
+    // (and a browser) can hit /v1/state, /v1/import, /v1/export.
+    if args.serve {
+        let state = crate::control_plane::ControlState::default();
+        *state.latest.write() = Some(result.clone());
+        rt.block_on(async {
+            match crate::control_plane::start(state).await {
+                Ok(port) => {
+                    println!("lancer-nmap control plane: http://127.0.0.1:{port}");
+                    println!("  GET /v1/state   GET /v1/export?format=json|xml|gnmap|sarif|csv|markdown   POST /v1/import");
+                    futures::future::pending::<()>().await;
+                }
+                Err(e) => eprintln!("control plane failed to start: {e}"),
+            }
+        });
+    }
     Ok(())
 }
 
