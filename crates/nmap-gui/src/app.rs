@@ -23,8 +23,7 @@ impl App {
                 st
             })
             .unwrap_or_default();
-        let visuals = state.theme.lock().visuals();
-        cc.egui_ctx.set_visuals(visuals);
+        state.theme.lock().apply(&cc.egui_ctx);
 
         // Optional pre-load from the environment: lets a launcher (or a test)
         // open the GUI with a target already entered, and auto-start the scan.
@@ -111,6 +110,9 @@ impl App {
 
 impl eframe::App for App {
     fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
+        // Keep our custom palette even though eframe may follow the OS theme
+        // and reset visuals each frame.
+        ctx.set_visuals(self.state.theme.lock().visuals());
         if self.auto_run {
             self.auto_run = false;
             self.run_form(ctx);

@@ -46,7 +46,7 @@ pub fn ui(ctx: &egui::Context, app: &mut App) {
                 }
                 if theme != *app.state.theme.lock() {
                     *app.state.theme.lock() = theme;
-                    ctx.set_visuals(theme.visuals());
+                    theme.apply(ctx);
                 }
             });
             ui.menu_button("Help", |ui| {
